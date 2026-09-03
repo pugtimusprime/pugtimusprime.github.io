@@ -15,9 +15,10 @@ const io = new Server(httpServer, {
 });
 const rooms = new Map();
 const pendingDisconnects = new Map();
+const TURN_DURATION_MS = Number(process.env.TURN_DURATION_MS || 60_000);
 
 app.get("/", (_request, response) => response.json({ service: "Hidden Front multiplayer", status: "online" }));
-app.get("/health", (_request, response) => response.json({ ok: true, rooms: rooms.size, version: 3 }));
+app.get("/health", (_request, response) => response.json({ ok: true, rooms: rooms.size, version: 4 }));
 
 function clean(value, max) {
   return typeof value === "string" ? value.trim().replace(/[^a-zA-Z0-9 _-]/g, "").slice(0, max) : "";
@@ -35,6 +36,9 @@ function createRoom(code) {
     turnOrder: [],
     turnIndex: 0,
     repositions: new Map(),
+    turnDeadline: 0,
+    turnTimer: null,
+    winnerId: null,
   };
 }
 
@@ -66,6 +70,12 @@ function syncPlayer(socket) {
   }
 }
 
+function clearTurnTimer(room) {
+  if (room.turnTimer) clearTimeout(room.turnTimer);
+  room.turnTimer = null;
+  room.turnDeadline = 0;
+}
+
 function emitTurn(room) {
   const activeId = room.turnOrder[room.turnIndex];
   const actions = room.round === 1 && room.turnIndex === 0 ? 2 : 3;
@@ -77,19 +87,53 @@ function emitTurn(room) {
       yourTurn: id === activeId,
       actions: id === activeId ? actions : 0,
       firstTurn: room.turnIndex === 0,
+      turnDeadline: room.turnDeadline,
+      turnDuration: TURN_DURATION_MS,
     });
   }
+}
+
+function armTurnTimer(room) {
+  clearTurnTimer(room);
+  const activeId = room.turnOrder[room.turnIndex];
+  if (room.stage !== "combat" || !activeId) return;
+  room.turnDeadline = Date.now() + TURN_DURATION_MS;
+  emitTurn(room);
+  room.turnTimer = setTimeout(() => {
+    if (room.stage === "combat" && room.turnOrder[room.turnIndex] === activeId && Date.now() >= room.turnDeadline) {
+      advanceCombatTurn(room, activeId, "timeout");
+    }
+  }, TURN_DURATION_MS + 25);
+  room.turnTimer.unref?.();
+}
+
+function advanceCombatTurn(room, playerId, reason = "manual") {
+  if (room.stage !== "combat" || room.turnOrder[room.turnIndex] !== playerId) return false;
+  clearTurnTimer(room);
+  if (reason === "timeout") {
+    io.to(room.code).emit("match-status", `${playerName(room, playerId)} ran out of time. Their turn was ended automatically.`);
+  }
+  if (room.turnIndex === 0) {
+    room.turnIndex = 1;
+    armTurnTimer(room);
+  } else {
+    room.stage = "reposition";
+    room.repositions.clear();
+    io.to(room.code).emit("reposition-start");
+  }
+  return true;
 }
 
 function startRound(room) {
   const playerIds = [...room.players.keys()];
   if (playerIds.length !== 2) return;
+  clearTurnTimer(room);
   room.round += 1;
   room.stage = "combat";
   room.turnIndex = 0;
   room.repositions.clear();
   room.turnOrder = Math.random() < 0.5 ? playerIds : [playerIds[1], playerIds[0]];
-  emitTurn(room);
+  armTurnTimer(room);
 }
 
 function detach(socket) {
@@ -99,6 +143,7 @@ function detach(socket) {
   if (pending) clearTimeout(pending.timer);
   pendingDisconnects.delete(socket.id);
   const room = rooms.get(code);
+  clearTurnTimer(room);
   socket.leave(code);
   socket.data.roomCode = undefined;
   if (!room) return;
@@ -119,7 +164,7 @@ io.on("connection", (socket) => {
   const pending = pendingDisconnects.get(socket.id);
   if (pending) clearTimeout(pending.timer);
   pendingDisconnects.delete(socket.id);
-  socket.emit("server-ready", { version: 3, recovered: socket.recovered });
+  socket.emit("server-ready", { version: 4, recovered: socket.recovered });
   if (socket.recovered) syncPlayer(socket);
 
   socket.on("join-room", (payload = {}, reply = () => {}) => {
@@ -202,15 +247,25 @@ io.on("connection", (socket) => {
 
   socket.on("finish-turn", () => {
     const room = rooms.get(socket.data.roomCode);
-    if (!room || room.stage !== "combat" || room.turnOrder[room.turnIndex] !== socket.id) return;
-    if (room.turnIndex === 0) {
-      room.turnIndex = 1;
-      emitTurn(room);
-    } else {
-      room.stage = "reposition";
-      room.repositions.clear();
-      io.to(room.code).emit("reposition-start");
-    }
+    if (!room || room.stage !== "combat") return;
+    advanceCombatTurn(room, socket.id, "manual");
+  });
+
+  socket.on("forfeit", () => {
+    const room = rooms.get(socket.data.roomCode);
+    if (!room || room.stage === "over" || !room.players.has(socket.id)) return;
+    const winnerId = [...room.players.keys()].find(id => id !== socket.id);
+    if (!winnerId) return;
+    clearTurnTimer(room);
+    room.stage = "over";
+    room.winnerId = winnerId;
+    io.to(room.code).emit("match-over", {
+      winnerId,
+      loserId: socket.id,
+      reason: "forfeit",
+      winnerName: playerName(room, winnerId),
+      loserName: playerName(room, socket.id),
+    });
   });
 
   socket.on("finish-reposition", (deployment) => {
