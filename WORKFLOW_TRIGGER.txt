@@ -1,0 +1,1 @@
+Trigger automated combat fixes.
