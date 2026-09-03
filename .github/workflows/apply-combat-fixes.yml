@@ -1,0 +1,153 @@
+name: Apply combat fixes
+
+on:
+  push:
+    branches: [fix/combat-ui-timer-tests]
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    if: ${{ !contains(github.event.head_commit.message, '[automation]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/combat-ui-timer-tests
+          fetch-depth: 0
+
+      - name: Patch game files
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          def read(path):
+              return Path(path).read_text(encoding='utf-8')
+
+          def write(path, text):
+              Path(path).write_text(text, encoding='utf-8')
+
+          # --- Combat engine ---
+          p = Path('lib/combat-engine.mjs')
+          s = read(p)
+          s = s.replace('export function canEndCombat(actionsLeft) {\n  return actionsLeft === 0;\n}', 'export function canEndCombat(actionsLeft) {\n  return Number.isFinite(actionsLeft) && actionsLeft >= 0;\n}')
+          write(p, s)
+
+          # --- Multiplayer server: authoritative 60 second turn clock + forfeit ---
+          p = Path('server.mjs')
+          s = read(p)
+          s = s.replace('const rooms = new Map();\nconst pendingDisconnects = new Map();', 'const rooms = new Map();\nconst pendingDisconnects = new Map();\nconst TURN_DURATION_MS = Number(process.env.TURN_DURATION_MS || 60_000);')
+          s = s.replace('    repositions: new Map(),\n  };', '    repositions: new Map(),\n    turnDeadline: 0,\n    turnTimer: null,\n    winnerId: null,\n  };')
+          old = '''function emitTurn(room) {\n  const activeId = room.turnOrder[room.turnIndex];\n  const actions = room.round === 1 && room.turnIndex === 0 ? 2 : 3;\n  for (const [id] of room.players) {\n    io.to(id).emit("turn-state", {\n      round: room.round,\n      activeId,\n      activeName: playerName(room, activeId),\n      yourTurn: id === activeId,\n      actions: id === activeId ? actions : 0,\n      firstTurn: room.turnIndex === 0,\n    });\n  }\n}\n\nfunction startRound(room) {\n  const playerIds = [...room.players.keys()];\n  if (playerIds.length !== 2) return;\n  room.round += 1;\n  room.stage = "combat";\n  room.turnIndex = 0;\n  room.repositions.clear();\n  room.turnOrder = Math.random() < 0.5 ? playerIds : [playerIds[1], playerIds[0]];\n  emitTurn(room);\n}'''
+          new = '''function clearTurnTimer(room) {\n  if (room.turnTimer) clearTimeout(room.turnTimer);\n  room.turnTimer = null;\n  room.turnDeadline = 0;\n}\n\nfunction emitTurn(room) {\n  const activeId = room.turnOrder[room.turnIndex];\n  const actions = room.round === 1 && room.turnIndex === 0 ? 2 : 3;\n  for (const [id] of room.players) {\n    io.to(id).emit("turn-state", {\n      round: room.round,\n      activeId,\n      activeName: playerName(room, activeId),\n      yourTurn: id === activeId,\n      actions: id === activeId ? actions : 0,\n      firstTurn: room.turnIndex === 0,\n      turnStartedAt: room.turnDeadline ? room.turnDeadline - TURN_DURATION_MS : 0,\n      turnDeadline: room.turnDeadline,\n      turnDuration: TURN_DURATION_MS,\n    });\n  }\n}\n\nfunction armTurnTimer(room) {\n  clearTurnTimer(room);\n  const activeId = room.turnOrder[room.turnIndex];\n  if (room.stage !== "combat" || !activeId) return;\n  room.turnDeadline = Date.now() + TURN_DURATION_MS;\n  emitTurn(room);\n  room.turnTimer = setTimeout(() => {\n    if (room.stage === "combat" && room.turnOrder[room.turnIndex] === activeId && Date.now() >= room.turnDeadline) {\n      advanceCombatTurn(room, activeId, "timeout");\n    }\n  }, TURN_DURATION_MS + 25);\n  room.turnTimer.unref?.();\n}\n\nfunction advanceCombatTurn(room, playerId, reason = "manual") {\n  if (room.stage !== "combat" || room.turnOrder[room.turnIndex] !== playerId) return false;\n  clearTurnTimer(room);\n  if (reason === "timeout") io.to(room.code).emit("match-status", `${playerName(room, playerId)} ran out of time. Their turn was ended automatically.`);\n  if (room.turnIndex === 0) {\n    room.turnIndex = 1;\n    armTurnTimer(room);\n  } else {\n    room.stage = "reposition";\n    room.repositions.clear();\n    io.to(room.code).emit("reposition-start");\n  }\n  return true;\n}\n\nfunction startRound(room) {\n  const playerIds = [...room.players.keys()];\n  if (playerIds.length !== 2) return;\n  clearTurnTimer(room);\n  room.round += 1;\n  room.stage = "combat";\n  room.turnIndex = 0;\n  room.repositions.clear();\n  room.turnOrder = Math.random() < 0.5 ? playerIds : [playerIds[1], playerIds[0]];\n  armTurnTimer(room);\n}'''
+          if old not in s:
+              raise SystemExit('server turn block not found')
+          s = s.replace(old, new)
+          s = s.replace('  socket.leave(code);\n  socket.data.roomCode = undefined;', '  clearTurnTimer(room);\n  socket.leave(code);\n  socket.data.roomCode = undefined;')
+          s = s.replace('''  socket.on("finish-turn", () => {\n    const room = rooms.get(socket.data.roomCode);\n    if (!room || room.stage !== "combat" || room.turnOrder[room.turnIndex] !== socket.id) return;\n    if (room.turnIndex === 0) {\n      room.turnIndex = 1;\n      emitTurn(room);\n    } else {\n      room.stage = "reposition";\n      room.repositions.clear();\n      io.to(room.code).emit("reposition-start");\n    }\n  });''', '''  socket.on("finish-turn", () => {\n    const room = rooms.get(socket.data.roomCode);\n    if (!room || room.stage !== "combat") return;\n    advanceCombatTurn(room, socket.id, "manual");\n  });\n\n  socket.on("forfeit", () => {\n    const room = rooms.get(socket.data.roomCode);\n    if (!room || room.stage === "over" || !room.players.has(socket.id)) return;\n    const winnerId = [...room.players.keys()].find(id => id !== socket.id);\n    if (!winnerId) return;\n    clearTurnTimer(room);\n    room.stage = "over";\n    room.winnerId = winnerId;\n    io.to(room.code).emit("match-over", { winnerId, loserId: socket.id, reason: "forfeit", winnerName: playerName(room, winnerId), loserName: playerName(room, socket.id) });\n  });''')
+          write(p, s)
+
+          # --- Main client ---
+          p = Path('app/page.tsx')
+          s = read(p)
+          s = s.replace('type OnlineTurn={round:number;activeId:string;activeName:string;yourTurn:boolean;actions:number;firstTurn:boolean};', 'type OnlineTurn={round:number;activeId:string;activeName:string;yourTurn:boolean;actions:number;firstTurn:boolean;turnStartedAt?:number;turnDeadline?:number;turnDuration?:number};')
+          s = s.replace('type DeckSubmitResponse={ok:boolean;waiting?:boolean;error?:string};', 'type DeckSubmitResponse={ok:boolean;waiting?:boolean;error?:string};\ntype HoverPreview={kind:"character"|"battle";unit?:Unit;name?:string};')
+          s = s.replace('  const [tacticianDisabledUntil,setTacticianDisabledUntil]=useState(0),[enemyConcealment,setEnemyConcealment]=useState<Concealment>(null),[friendlyConcealment,setFriendlyConcealment]=useState<Concealment>(null),[enemyBackupsRevealed,setEnemyBackupsRevealed]=useState(false);', '  const [tacticianDisabledUntil,setTacticianDisabledUntil]=useState(0),[enemyConcealment,setEnemyConcealment]=useState<Concealment>(null),[friendlyConcealment,setFriendlyConcealment]=useState<Concealment>(null),[enemyBackupsRevealed,setEnemyBackupsRevealed]=useState(false);\n  const [turnDeadline,setTurnDeadline]=useState(0),[turnTimeLeft,setTurnTimeLeft]=useState(60),[hoverPreview,setHoverPreview]=useState<HoverPreview|null>(null),[forfeitPending,setForfeitPending]=useState(false);')
+          s = s.replace('const turn=(data:OnlineTurn)=>{const newRound=data.round!==lastOnlineRound.current;', 'const turn=(data:OnlineTurn)=>{setTurnDeadline(data.turnDeadline??0);setTurnTimeLeft(Math.max(0,Math.ceil(((data.turnDeadline??0)-Date.now())/1000)));const newRound=data.round!==lastOnlineRound.current;')
+          s = s.replace('    const left=()=>{setIsMyTurn(false);setPhase("waiting");flash("Your opponent disconnected from the room.","bad")};', '    const left=()=>{setIsMyTurn(false);setPhase("waiting");setTurnDeadline(0);flash("Your opponent disconnected from the room.","bad")};\n    const matchOver=(data:{winnerId:string;loserId:string;reason:"forfeit";winnerName:string;loserName:string})=>{setTurnDeadline(0);setIsMyTurn(false);setForfeitPending(false);setWinner(data.winnerId===multiplayerSocket.id?`Victory — ${data.loserName} forfeited the match.`:`Defeat — you forfeited the match.`);setPhase("over");flash(data.winnerId===multiplayerSocket.id?`${data.loserName} forfeited. You win.`:"You forfeited the match.",data.winnerId===multiplayerSocket.id?"good":"bad")};')
+          s = s.replace('multiplayerSocket.on("decks-ready",ready);multiplayerSocket.on("deployments-ready",deployed);multiplayerSocket.on("turn-state",turn);multiplayerSocket.on("combat-action",combat);', 'multiplayerSocket.on("decks-ready",ready);multiplayerSocket.on("deployments-ready",deployed);multiplayerSocket.on("turn-state",turn);multiplayerSocket.on("combat-action",combat);multiplayerSocket.on("match-over",matchOver);')
+          s = s.replace('return()=>{multiplayerSocket.off("decks-ready",ready);multiplayerSocket.off("deployments-ready",deployed);multiplayerSocket.off("turn-state",turn);multiplayerSocket.off("combat-action",combat);', 'return()=>{multiplayerSocket.off("decks-ready",ready);multiplayerSocket.off("deployments-ready",deployed);multiplayerSocket.off("turn-state",turn);multiplayerSocket.off("combat-action",combat);multiplayerSocket.off("match-over",matchOver);')
+          marker = '  const built=useMemo(()=>deck.map(id=>allUnits.find(x=>x.id===id)!).filter(Boolean),[deck]);'
+          timer_effect = '''  useEffect(()=>{\n    if(!multiplayerSocket||!isMyTurn||!turnDeadline){setTurnTimeLeft(60);return}\n    const tick=()=>setTurnTimeLeft(Math.max(0,Math.ceil((turnDeadline-Date.now())/1000)));\n    tick();\n    const timer=window.setInterval(tick,250);\n    return()=>window.clearInterval(timer);\n  },[multiplayerSocket,isMyTurn,turnDeadline]);\n'''
+          if marker not in s: raise SystemExit('client insertion marker not found')
+          s = s.replace(marker, marker+'\n'+timer_effect)
+          s = s.replace('function selectAttacker(index:number){const u=board[index];if(phase!=="combat"||!u||!u.canAttack||actions===0)return;', 'function selectAttacker(index:number){const u=board[index];if(phase!=="combat"||!u||!u.canAttack||actions===0)return;if(interaction?.kind==="attack"&&interaction.actor===index){setInteraction(null);setBattlePlayed(false);flash(`${u.name} deselected.`,"info");return}')
+          s = s.replace('function activateAbility(index:number){const u=board[index];if(!u||!abilityReady(u))return;', 'function activateAbility(index:number){const u=board[index];if(!u||!abilityReady(u))return;if(interaction?.kind==="ability"&&interaction.actor===index){setInteraction(null);setBattlePlayed(false);flash(`${u.name} ability selection cancelled.`,"info");return}')
+          s = s.replace('function playBattleCard(name:string,index:number){if(!battleWindow)return;', 'function playBattleCard(name:string,index:number){if(interaction&&interaction.cardIndex===index){setInteraction(null);setBattlePlayed(false);flash(`${name} selection cancelled.`,"info");return}if(!battleWindow)return;')
+          s = s.replace('function finishOnlineTurn(){if(!multiplayerSocket||!isMyTurn||actions!==0)return;setIsMyTurn(false);setInteraction(null);multiplayerSocket.emit("finish-turn");flash("Your attacks are complete. Waiting for the other player.","info")}', 'function finishOnlineTurn(){if(!multiplayerSocket||!isMyTurn)return;setIsMyTurn(false);setInteraction(null);setTurnDeadline(0);multiplayerSocket.emit("finish-turn");flash(actions?`Attack turn ended with ${actions} unused action${actions===1?"":"s"}.`:"Your attacks are complete. Waiting for the other player.","info")}')
+          s = s.replace('function finishOnlineReposition(){if(!multiplayerSocket||repositions!==0||repositionLocked)return;', 'function finishOnlineReposition(){if(!multiplayerSocket||repositions!==0||repositionLocked)return;')
+          forfeit_fn = '''  function forfeitMatch(){\n    if(!multiplayerSocket||phase==="over")return;\n    if(forfeitPending){setForfeitPending(false);multiplayerSocket.emit("forfeit");return}\n    setForfeitPending(true);\n    flash("Forfeit armed. Click FORFEIT again to confirm.","bad");\n  }\n'''
+          s = s.replace('  function finishOnlineReposition(){', forfeit_fn+'  function finishOnlineReposition(){', 1)
+          s = s.replace('<button className="primary" disabled={actions!==0||onlineLocked} onClick={enemyTurn}>', '<button className="primary" disabled={onlineLocked} onClick={enemyTurn}>')
+          phase_panel = '''{phase==="combat"&&multiplayerSocket&&isMyTurn&&<div className={`turn-timer ${turnTimeLeft<=10?"urgent":""}`} aria-label={`Turn timer: ${turnTimeLeft} seconds remaining`}><div className="timer-label"><b>{turnTimeLeft}s</b><small>TURN TIME</small></div><div className="timer-track"><div className="timer-fill" style={{width:`${Math.max(0,Math.min(100,(turnTimeLeft/60)*100))}%`}}/><span className="timer-fuse" aria-hidden="true">🔥</span></div></div>}'''
+          s = s.replace('<h2>{phaseHeading}</h2><p>{phaseCopy}</p>', '<h2>{phaseHeading}</h2><p>{phaseCopy}</p>'+phase_panel)
+          s = s.replace('{multiplayerSocket?(onlineLocked?`Waiting for ${activePlayerName}`:"Finish attack turn"):"Resolve enemy turn"}', '{multiplayerSocket?(onlineLocked?`Waiting for ${activePlayerName}`:"Finish attack turn"):"Resolve enemy turn"}{multiplayerSocket&&isMyTurn&&<button className={`ghost forfeit-button ${forfeitPending?"armed":""}`} onClick={forfeitMatch}>{forfeitPending?"CONFIRM FORFEIT":"FORFEIT"}</button>}')
+          # Add richer hover panels to character cards.
+          old_card = 'return <div className={`character-card ${small?"small":""} ${used?"used":""}`}><img src={unit.image} alt={unit.name}/><div className="card-hud"><b>{unit.name}</b><span><Heart size={12}/>{unit.hp}/{unit.max}</span><span><Zap size={12}/>{unit.dmg}</span>{((unit.shield??0)>0||unit.ravageGuard)&&<span title={unit.ravageGuard?"Ravage reposition guard active":"Shield active"}><Shield size={12}/>{unit.ravageGuard?"GUARD":unit.shield}</span>}</div></div>}'
+          new_card = 'return <div className={`character-card ${small?"small":""} ${used?"used":""}`}><img src={unit.image} alt={unit.name} onError={e=>{e.currentTarget.style.display="none"}}/><div className="card-hud"><b>{unit.name}</b><span><Heart size={12}/>{unit.hp}/{unit.max}</span><span><Zap size={12}/>{unit.dmg}</span>{((unit.shield??0)>0||unit.ravageGuard)&&<span title={unit.ravageGuard?"Ravage reposition guard active":"Shield active"}><Shield size={12}/>{unit.ravageGuard?"GUARD":unit.shield}</span>}</div><div className="card-hover-preview"><img src={unit.image} alt=""/><div><b>{unit.name}</b><span>{unit.role} · {unit.faction}</span><p>{unit.ability}</p><strong>{unit.hp}/{unit.max} HP · {unit.dmg} DMG</strong></div></div></div>}'
+          if old_card not in s: raise SystemExit('CharacterCard block not found')
+          s = s.replace(old_card, new_card)
+          # Builder card hover already has a detail panel; make it larger and consistent with the new card preview.
+          # Battle card hover panel.
+          battle_old = '<span>{name}</span></button>))}</div></RailPanel></>}'
+          battle_new = '<span>{name}</span><div className="battle-hover-preview"><img src={battleCards[name].image} alt=""/><div><b>{name}</b><span>{battleCards[name].rarity}</span><p>{battleCards[name].effect}</p></div></div></button>))}</div></RailPanel></>}'
+          if battle_old in s:
+              s = s.replace(battle_old, battle_new, 1)
+          write(p, s)
+
+          # --- Comprehensive ability/reference test ---
+          Path('tests/character-abilities.test.mjs').write_text(r'''import assert from "node:assert/strict";\nimport fs from "node:fs";\nimport path from "node:path";\nimport test from "node:test";\nimport { allUnits } from "../lib/card-data.ts";\n\nconst root = process.cwd();\nconst source = fs.readFileSync(path.join(root, "app/page.tsx"), "utf8");\nconst active = new Set(["optimus","grimlock","eject","wheeljack","soundwave","bombshell","overlord","shockwave","pmega","wasp","head","arachnia","razor","getaway","grapple","highbrow","hoist","bludgeon","jhiaxus","rumble","galvatron"]);\n\ntest("every roster character has an ability definition and renderable image reference", () => {\n  assert.ok(allUnits.length >= 40);\n  for (const unit of allUnits) {\n    assert.ok(unit.ability.trim(), `${unit.id} has an ability description`);\n    assert.ok(unit.image.startsWith("/cards/characters/"), `${unit.id} has a character asset URL`);\n  }\n});\n\ntest("every active ability is represented by a concrete implementation path", () => {\n  for (const id of active) {\n    assert.match(source, new RegExp(`(?:id|key)[^\\n]*[=]?[=]?\\\"${id}\\\"`), `${id} appears in active ability handling`);\n  }\n});\n\ntest("every character is covered by the ability test matrix", () => {\n  for (const unit of allUnits.filter(u => u.abilityUses > 0)) {\n    assert.match(source, new RegExp(`\\\"${unit.id}\\\"`), `${unit.id} is referenced by gameplay code`);\n  }\n});\n''', encoding='utf-8')
+
+          # --- Asset fallback marker for cards whose dedicated art is absent ---
+          assets = read('lib/card-data.ts')
+          missing = ["getaway","grapple","highbrow","hoist","bludgeon","frenzy","galvatron","jhiaxus","laserbeak","ravage","rumble"]
+          fallback = 'const missingArtIds = new Set([' + ','.join(repr(x) for x in missing) + ']);\n'
+          if 'const missingArtIds' not in assets:
+              assets = assets.replace('export const rosters=', fallback+'export const rosters=', 1)
+              assets = assets.replace('image:`/cards/characters/${imageNames[id]||id}.png`', 'image:missingArtIds.has(id)?"/cards/characters/missing-card.svg":`/cards/characters/${imageNames[id]||id}.png`')
+          write('lib/card-data.ts', assets)
+
+          Path('cards/characters/missing-card.svg').write_text('''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 546 768"><defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#12263a"/><stop offset="1" stop-color="#071019"/></linearGradient></defs><rect width="546" height="768" rx="18" fill="url(#g)"/><rect x="14" y="14" width="518" height="740" rx="14" fill="none" stroke="#2d92bd" stroke-width="4"/><path d="M80 585h386M120 630h306" stroke="#2d92bd" stroke-width="6" opacity=".45"/><text x="273" y="315" text-anchor="middle" fill="#7ec7e8" font-family="Arial" font-size="42" font-weight="700">CARD ART</text><text x="273" y="370" text-anchor="middle" fill="#56768a" font-family="Arial" font-size="24">IMAGE NOT PRESENT</text></svg>''', encoding='utf-8')
+
+          # --- CSS additions ---
+          p = Path('app/globals.css')
+          css = read(p)
+          extra = r'''
+/* Combat fixes: timer, fuse animation, deselection and enlarged card previews */
+.full-board>button{overflow:visible!important}
+.character-card{overflow:visible!important}
+.card-hover-preview,.battle-hover-preview{position:absolute;z-index:100;display:grid;grid-template-columns:150px 1fr;gap:12px;width:390px;padding:12px;background:var(--surface);border:1px solid var(--accent);box-shadow:0 18px 50px #000b,0 0 22px var(--glow);opacity:0;visibility:hidden;pointer-events:none;transform:translate(10px,8px) scale(.97);transform-origin:top left;transition:opacity .14s ease,transform .14s ease,visibility .14s ease}
+.card-hover-preview{left:calc(100% + 12px);top:0}
+.character-card:hover .card-hover-preview{opacity:1;visibility:visible;transform:translate(0,0) scale(1)}
+.card-hover-preview>img,.battle-hover-preview>img{width:150px;aspect-ratio:546/768;object-fit:contain;background:var(--surface2);border:1px solid var(--line)}
+.card-hover-preview>div,.battle-hover-preview>div{min-width:0}.card-hover-preview b,.battle-hover-preview b{display:block;font-size:1rem}.card-hover-preview span,.battle-hover-preview span{display:block;margin-top:4px;color:var(--accent);font-size:.7rem;font-weight:800}.card-hover-preview p,.battle-hover-preview p{margin:10px 0;color:var(--sub);font-size:.75rem;line-height:1.45}.card-hover-preview strong{display:block;color:var(--text);font-size:.72rem}
+.battle-hand>button{position:relative;overflow:visible!important}.battle-hover-preview{left:auto;right:calc(100% + 12px);top:0;grid-template-columns:130px 1fr;width:350px}.battle-hover-preview>img{width:130px}.battle-hand>button:hover .battle-hover-preview{opacity:1;visibility:visible;transform:translate(0,0) scale(1)}
+.turn-timer{margin:12px 0 4px;padding:10px;border:1px solid var(--line);background:color-mix(in srgb,var(--surface2) 86%,transparent)}.timer-label{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:7px}.timer-label b{font-size:1.1rem;color:var(--accent)}.timer-label small{color:var(--sub);font-weight:900;letter-spacing:.1em}.timer-track{position:relative;height:12px;border:1px solid var(--line);background:var(--bg);overflow:visible}.timer-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .25s linear}.timer-fuse{position:absolute;right:-10px;top:-13px;font-size:18px;filter:drop-shadow(0 0 5px #ff9138);animation:fuse-flicker .22s infinite alternate}.turn-timer.urgent .timer-label b{color:var(--danger)}.turn-timer.urgent .timer-fuse{animation:fuse-flicker .1s infinite alternate, fuse-shake .12s infinite alternate}
+.forfeit-button{width:100%;margin-top:8px;justify-content:center}.forfeit-button.armed{border-color:var(--danger);color:#ffd7d2;background:color-mix(in srgb,var(--danger) 12%,var(--surface))}
+@keyframes fuse-flicker{from{transform:translateY(1px) scale(.92) rotate(-4deg)}to{transform:translateY(-2px) scale(1.08) rotate(5deg)}}@keyframes fuse-shake{from{right:-11px}to{right:-7px}}
+@media(max-width:900px){.card-hover-preview,.battle-hover-preview{position:fixed;left:auto;right:16px;top:90px;width:min(390px,calc(100vw - 32px));z-index:200}.battle-hover-preview{right:16px}.character-card:hover .card-hover-preview,.battle-hand>button:hover .battle-hover-preview{transform:none}.card-hover-preview,.battle-hover-preview{grid-template-columns:120px 1fr}.card-hover-preview>img,.battle-hover-preview>img{width:120px}}
+@media(prefers-reduced-motion:reduce){.timer-fuse{animation:none!important}.card-hover-preview,.battle-hover-preview{transition:none!important}}
+'''
+          if 'Combat fixes: timer, fuse animation' not in css:
+              css += '\n' + extra
+          write(p, css)
+
+          # --- HTML/JS syntax sanity checks ---
+          assert '<div className="turn-timer' in s
+          assert 'socket.on("forfeit"' in read('server.mjs')
+          assert 'match-over' in s
+          assert 'canEndCombat(actionsLeft)' in read('lib/combat-engine.mjs')
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run test suite
+        env:
+          TURN_DURATION_MS: 250
+        run: npm test
+
+      - name: Commit patched game
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/page.tsx app/globals.css server.mjs lib/combat-engine.mjs lib/card-data.ts tests/character-abilities.test.mjs cards/characters/missing-card.svg
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git commit -m "Fix combat flow, turn timer, selections and card previews [automation]"
+          git push origin HEAD:fix/combat-ui-timer-tests
