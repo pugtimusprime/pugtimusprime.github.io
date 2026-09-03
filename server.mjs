@@ -6,11 +6,18 @@ const app = express();
 const httpServer = createServer(app);
 const permittedOrigins = (process.env.CLIENT_ORIGIN || "https://pugtimusprime.github.io")
   .split(",").map((origin) => origin.trim()).filter(Boolean);
-const io = new Server(httpServer, { cors: { origin: permittedOrigins, methods: ["GET", "POST"] } });
+const io = new Server(httpServer, {
+  cors: { origin: permittedOrigins, methods: ["GET", "POST"] },
+  connectionStateRecovery: {
+    maxDisconnectionDuration: 120_000,
+    skipMiddlewares: true,
+  },
+});
 const rooms = new Map();
+const pendingDisconnects = new Map();
 
 app.get("/", (_request, response) => response.json({ service: "Hidden Front multiplayer", status: "online" }));
-app.get("/health", (_request, response) => response.json({ ok: true, rooms: rooms.size }));
+app.get("/health", (_request, response) => response.json({ ok: true, rooms: rooms.size, version: 3 }));
 
 function clean(value, max) {
   return typeof value === "string" ? value.trim().replace(/[^a-zA-Z0-9 _-]/g, "").slice(0, max) : "";
@@ -42,6 +49,23 @@ function publicRoom(room) {
 function announce(room) { io.to(room.code).emit("room-state", publicRoom(room)); }
 function playerName(room, id) { return room.players.get(id)?.name || "Opponent"; }
 
+function sendDecksReady(room, id) {
+  const opponent = [...room.decks.entries()].find(([other]) => other !== id)?.[1];
+  if (opponent) io.to(id).emit("decks-ready", { opponent });
+}
+
+function syncPlayer(socket) {
+  const room = rooms.get(socket.data.roomCode);
+  if (!room || !room.players.has(socket.id)) return;
+  announce(room);
+  if (room.stage === "deckbuilding") {
+    socket.emit("match-ready", { room: publicRoom(room) });
+    if (room.decks.has(socket.id)) socket.emit("match-status", "Your deck is locked. Waiting for your opponent to finish building.");
+  } else if (room.stage === "deployment" && room.decks.size === 2) {
+    sendDecksReady(room, socket.id);
+  }
+}
+
 function emitTurn(room) {
   const activeId = room.turnOrder[room.turnIndex];
   const actions = room.round === 1 && room.turnIndex === 0 ? 2 : 3;
@@ -71,6 +95,9 @@ function startRound(room) {
 function detach(socket) {
   const code = socket.data.roomCode;
   if (!code) return;
+  const pending = pendingDisconnects.get(socket.id);
+  if (pending) clearTimeout(pending.timer);
+  pendingDisconnects.delete(socket.id);
   const room = rooms.get(code);
   socket.leave(code);
   socket.data.roomCode = undefined;
@@ -89,12 +116,23 @@ function detach(socket) {
 }
 
 io.on("connection", (socket) => {
-  socket.emit("server-ready", { version: 2 });
+  const pending = pendingDisconnects.get(socket.id);
+  if (pending) clearTimeout(pending.timer);
+  pendingDisconnects.delete(socket.id);
+  socket.emit("server-ready", { version: 3, recovered: socket.recovered });
+  if (socket.recovered) syncPlayer(socket);
 
   socket.on("join-room", (payload = {}, reply = () => {}) => {
     const code = clean(payload.code, 12).toUpperCase();
     const name = clean(payload.name, 20) || "Player";
     if (code.length < 3) return reply({ ok: false, error: "Room code needs at least 3 characters." });
+    const currentRoom = rooms.get(socket.data.roomCode);
+    if (currentRoom?.code === code && currentRoom.players.has(socket.id)) {
+      currentRoom.players.get(socket.id).name = name;
+      reply({ ok: true, room: publicRoom(currentRoom), recovered: true });
+      syncPlayer(socket);
+      return;
+    }
     detach(socket);
     let room = rooms.get(code);
     if (!room) { room = createRoom(code); rooms.set(code, room); }
@@ -110,6 +148,7 @@ io.on("connection", (socket) => {
     const room = rooms.get(socket.data.roomCode);
     const player = room?.players.get(socket.id);
     if (!room || !player) return;
+    if (room.started) return syncPlayer(socket);
     player.ready = Boolean(ready);
     announce(room);
     if (room.players.size === 2 && [...room.players.values()].every((entry) => entry.ready)) {
@@ -120,16 +159,25 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("submit-deck", (deck) => {
+  socket.on("submit-deck", (deck, reply = () => {}) => {
+    const respond = typeof reply === "function" ? reply : () => {};
     const room = rooms.get(socket.data.roomCode);
-    if (!room || room.stage !== "deckbuilding" || !Array.isArray(deck) || deck.length !== 9 || new Set(deck).size !== 9) return;
-    room.decks.set(socket.id, deck);
-    if (room.decks.size !== 2) return socket.emit("match-status", "Deck locked. Waiting for your opponent to finish building.");
-    room.stage = "deployment";
-    for (const [id] of room.players) {
-      const opponent = [...room.decks.entries()].find(([other]) => other !== id)?.[1];
-      io.to(id).emit("decks-ready", { opponent });
+    if (!room || !room.players.has(socket.id)) return respond({ ok: false, error: "You are no longer connected to this room. Go back to Multiplayer and rejoin it." });
+    if (!Array.isArray(deck) || deck.length !== 9 || new Set(deck).size !== 9 || deck.some((id) => typeof id !== "string")) {
+      return respond({ ok: false, error: "Your deck must contain exactly nine different character cards." });
     }
+    if (room.stage === "deployment" && room.decks.size === 2 && room.decks.has(socket.id)) {
+      respond({ ok: true, waiting: false, recovered: true });
+      sendDecksReady(room, socket.id);
+      return;
+    }
+    if (room.stage !== "deckbuilding") return respond({ ok: false, error: "This room is not accepting decks right now. Rejoin with a new room code and try again." });
+    room.decks.set(socket.id, deck);
+    const waiting = room.decks.size !== 2;
+    respond({ ok: true, waiting });
+    if (waiting) return socket.emit("match-status", "Deck locked. Waiting for your opponent to finish building.");
+    room.stage = "deployment";
+    for (const [id] of room.players) sendDecksReady(room, id);
   });
 
   socket.on("submit-deployment", (deployment) => {
@@ -178,7 +226,17 @@ io.on("connection", (socket) => {
   });
 
   socket.on("leave-room", () => detach(socket));
-  socket.on("disconnect", () => detach(socket));
+  socket.on("disconnect", (reason) => {
+    if (reason === "client namespace disconnect" || reason === "server namespace disconnect") return detach(socket);
+    const code = socket.data.roomCode;
+    if (!code) return;
+    const timer = setTimeout(() => {
+      pendingDisconnects.delete(socket.id);
+      detach(socket);
+    }, 125_000);
+    timer.unref?.();
+    pendingDisconnects.set(socket.id, { timer, code });
+  });
 });
 
 const port = Number(process.env.PORT || 3000);
