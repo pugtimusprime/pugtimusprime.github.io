@@ -59,7 +59,8 @@ const rows: Record<Faction, [string,string,Role,number,number,string,number][]> 
 };
 
 const imageNames:Record<string,string>={bee:"bumblebee",sun:"sunstreaker",side:"sideswipe",pmega:"megatron-p",rampagebw:"rampage-p",head:"headstrong",arachnia:"black-arachnia",razor:"razorclaw",scorp:"scorponok",wasp:"waspinator",dive:"divebomb",terror:"terrorsaur",primal:"optimus-primal",thunder:"thundercracker"};
-export const rosters=Object.fromEntries(Object.entries(rows).map(([faction,units])=>[faction,units.map(([id,name,role,max,dmg,ability,abilityUses])=>({id,name,role,max,hp:max,dmg,ability,abilityUses,canAttack:true,faction:faction as Faction,image:`/cards/characters/${imageNames[id]||id}.png`,shield:id==="terror"?1:0}))])) as Record<Faction,Unit[]>;
+const missingArtIds=new Set(['getaway','grapple','highbrow','hoist','bludgeon','frenzy','galvatron','jhiaxus','laserbeak','ravage','rumble']);
+export const rosters=Object.fromEntries(Object.entries(rows).map(([faction,units])=>[faction,units.map(([id,name,role,max,dmg,ability,abilityUses])=>({id,name,role,max,hp:max,dmg,ability,abilityUses,canAttack:true,faction:faction as Faction,image:missingArtIds.has(id)?`/cards/characters/fallback-${id}.svg`:`/cards/characters/${imageNames[id]||id}.png`,shield:id==="terror"?1:0}))])) as Record<Faction,Unit[]>;
 export const allUnits=Object.values(rosters).flat();
 
 export const battleCards:Record<string,BattleInfo>={
