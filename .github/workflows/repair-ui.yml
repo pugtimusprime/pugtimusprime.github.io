@@ -1,0 +1,76 @@
+name: Repair Hidden Front UI
+
+on:
+  push:
+    branches:
+      - fix/combat-ui-timer-tests
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/combat-ui-timer-tests
+          fetch-depth: 0
+      - name: Repair UI
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def r(p): return Path(p).read_text(encoding='utf-8')
+          def w(p,s): Path(p).write_text(s,encoding='utf-8')
+          def sub(p,a,b):
+              s=r(p)
+              if a not in s: raise SystemExit(f'missing target in {p}: {a[:120]}')
+              w(p,s.replace(a,b,1))
+
+          # Character hover: large card + complete details.
+          p='app/page.tsx'; s=r(p)
+          old='''function CharacterCard({unit,hidden=false,small=false,used=false}:{unit:Unit;hidden?:boolean;small?:boolean;used?:boolean}){if(hidden)return <div className={`character-card card-back ${small?"small":""}`}><Shield/><b>HIDDEN</b></div>;return <div className={`character-card ${small?"small":""} ${used?"used":""}`}><img src={unit.image} alt={unit.name}/><div className="card-hud"><b>{unit.name}</b><span><Heart size={12}/>{unit.hp}/{unit.max}</span><span><Zap size={12}/>{unit.dmg}</span>{((unit.shield??0)>0||unit.ravageGuard)&&<span title={unit.ravageGuard?"Ravage reposition guard active":"Shield active"}><Shield size={12}/>{unit.ravageGuard?"GUARD":unit.shield}</span>}</div></div>}'''
+          new='''function CharacterCard({unit,hidden=false,small=false,used=false}:{unit:Unit;hidden?:boolean;small?:boolean;used?:boolean}){if(hidden)return <div className={`character-card card-back ${small?"small":""}`}><Shield/><b>HIDDEN</b></div>;return <div className={`character-card ${small?"small":""} ${used?"used":""}`}><img src={unit.image} alt={unit.name}/><div className="card-hud"><b>{unit.name}</b><span><Heart size={12}/>{unit.hp}/{unit.max}</span><span><Zap size={12}/>{unit.dmg}</span>{((unit.shield??0)>0||unit.ravageGuard)&&<span title={unit.ravageGuard?"Ravage reposition guard active":"Shield active"}><Shield size={12}/>{unit.ravageGuard?"GUARD":unit.shield}</span>}</div><div className="card-hover-preview"><img src={unit.image} alt=""/><div><b>{unit.name}</b><span>{unit.role} · {unit.faction}</span><p>{unit.ability}</p><strong>{unit.hp}/{unit.max} HP · {unit.dmg} DMG</strong></div></div></div>}'''
+          if old not in s: raise SystemExit('CharacterCard block missing')
+          s=s.replace(old,new,1)
+
+          # Battle-card hover: show full card and effect.
+          old='{battleHand.map((name,i)=><button key={`${name}-${i}`} disabled={!battleWindow} onClick={()=>playBattleCard(name,i)} title={battleCards[name].effect}>{battleCards[name].image?<img src={battleCards[name].image} alt={name}/>:<TrapCard/>}<span>{name}</span></button>)}'
+          new='{battleHand.map((name,i)=><button key={`${name}-${i}`} disabled={!battleWindow} onClick={()=>playBattleCard(name,i)} title={battleCards[name].effect}>{battleCards[name].image?<img src={battleCards[name].image} alt={name}/>:<TrapCard/>}<span>{name}</span><div className="battle-hover-preview">{battleCards[name].image?<img src={battleCards[name].image} alt=""/>:<TrapCard/>}<div><b>{name}</b><span>{battleCards[name].rarity}</span><p>{battleCards[name].effect}</p></div></div></button>)}'
+          if old not in s: raise SystemExit('Battle hand block missing')
+          s=s.replace(old,new,1)
+
+          # Prevent invalid nested buttons. Put the end/forfeit actions in a wrapper.
+          old='''<button className="primary" disabled={onlineLocked} onClick={enemyTurn}>{multiplayerSocket?(onlineLocked?`Waiting for ${activePlayerName}`:"Finish attack turn"):"Resolve enemy turn"}{multiplayerSocket&&isMyTurn&&<button className={`ghost forfeit-button ${forfeitPending?"armed":""}`} onClick={forfeitMatch}>{forfeitPending?"CONFIRM FORFEIT":"FORFEIT"}</button>}</button>'''
+          new='''<div className="phase-actions"><button className="primary" disabled={onlineLocked} onClick={enemyTurn}>{multiplayerSocket?(onlineLocked?`Waiting for ${activePlayerName}`:"Finish attack turn"):"Resolve enemy turn"}</button>{multiplayerSocket&&phase==="combat"&&<button className={`ghost forfeit-button ${forfeitPending?"armed":""}`} onClick={forfeitMatch}>{forfeitPending?"CONFIRM FORFEIT":"FORFEIT"}</button>}</div>'''
+          if old not in s: raise SystemExit('Nested phase button block missing')
+          s=s.replace(old,new,1)
+
+          # Hide the timer card once its clock reaches zero.
+          old='phase==="combat"&&multiplayerSocket&&isMyTurn&&<div className={`turn-timer ${turnTimeLeft<=10?"urgent":""}`}'
+          new='phase==="combat"&&multiplayerSocket&&isMyTurn&&turnTimeLeft>0&&<div className={`turn-timer ${turnTimeLeft<=10?"urgent":""}`}'
+          if old in s: s=s.replace(old,new,1)
+
+          # Add a new required selectable theme for this substantive update.
+          old='["soundwave","Soundwave Signal"],["velocitron","Velocitron Raceway"],'
+          new='["soundwave","Soundwave Signal"],["velocitron","Velocitron Raceway"],["ark","ARK Command"],'
+          if old in s: s=s.replace(old,new,1)
+          w(p,s)
+
+          # CSS for the above UI.
+          p='app/globals.css'; css=r(p)
+          if '/* Hidden Front combat-fix UI */' not in css:
+              css += r'''\n/* Hidden Front combat-fix UI */\nhtml[data-theme="ark"]{--bg:#07131a;--surface:#10242e;--surface2:#173441;--text:#effaff;--sub:#91adba;--accent:#69dcff;--accent2:#f1a342;--danger:#ff655b;--line:#386070;--glow:#69dcff55}html[data-theme="ark"] body{background:radial-gradient(circle at 50% -10%,#1d5267,var(--bg) 55%)}\n.phase-actions{display:grid;gap:8px}.turn-timer{margin:12px 0 4px;padding:10px;border:1px solid var(--line);background:color-mix(in srgb,var(--surface2) 86%,transparent)}.timer-label{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:7px}.timer-label b{font-size:1.1rem;color:var(--accent)}.timer-label small{color:var(--sub);font-weight:900;letter-spacing:.1em}.timer-track{position:relative;height:12px;border:1px solid var(--line);background:var(--bg);overflow:visible}.timer-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .25s linear}.timer-fuse{position:absolute;right:-10px;top:-13px;font-size:18px;filter:drop-shadow(0 0 5px #ff9138);animation:fuse-flicker .22s infinite alternate}.turn-timer.urgent .timer-label b{color:var(--danger)}.turn-timer.urgent .timer-fuse{animation:fuse-flicker .1s infinite alternate,fuse-shake .12s infinite alternate}.forfeit-button{width:100%;justify-content:center}.forfeit-button.armed{border-color:var(--danger);color:#ffd7d2;background:color-mix(in srgb,var(--danger) 12%,var(--surface))}@keyframes fuse-flicker{from{transform:translateY(1px) scale(.92) rotate(-4deg)}to{transform:translateY(-2px) scale(1.08) rotate(5deg)}}@keyframes fuse-shake{from{right:-11px}to{right:-7px}}\n.full-board>button{overflow:visible!important}.character-card{overflow:visible!important}.card-hover-preview,.battle-hover-preview{position:absolute;z-index:100;display:grid;grid-template-columns:150px 1fr;gap:12px;width:390px;padding:12px;background:var(--surface);border:1px solid var(--accent);box-shadow:0 18px 50px #000b,0 0 22px var(--glow);opacity:0;visibility:hidden;pointer-events:none;transform:translate(10px,8px) scale(.97);transform-origin:top left;transition:opacity .14s ease,transform .14s ease,visibility .14s ease}.card-hover-preview{left:calc(100% + 12px);top:0}.character-card:hover .card-hover-preview{opacity:1;visibility:visible;transform:translate(0,0) scale(1)}.card-hover-preview>img,.battle-hover-preview>img{width:150px;aspect-ratio:546/768;object-fit:contain;background:var(--surface2);border:1px solid var(--line)}.card-hover-preview b,.battle-hover-preview b{display:block;font-size:1rem}.card-hover-preview span,.battle-hover-preview span{display:block;margin-top:4px;color:var(--accent);font-size:.7rem;font-weight:800}.card-hover-preview p,.battle-hover-preview p{margin:10px 0;color:var(--sub);font-size:.75rem;line-height:1.45}.card-hover-preview strong{display:block;color:var(--text);font-size:.72rem}.battle-hand>button{position:relative;overflow:visible!important}.battle-hover-preview{left:auto;right:calc(100% + 12px);top:0;grid-template-columns:130px 1fr;width:350px}.battle-hover-preview>img{width:130px}.battle-hand>button:hover .battle-hover-preview{opacity:1;visibility:visible;transform:translate(0,0) scale(1)}.control-rail{overflow:visible!important;max-height:none!important}\n@media(max-width:900px){.card-hover-preview,.battle-hover-preview{position:fixed;left:auto;right:16px;top:90px;width:min(390px,calc(100vw - 32px));z-index:200;grid-template-columns:120px 1fr}.card-hover-preview>img,.battle-hover-preview>img{width:120px}}@media(prefers-reduced-motion:reduce){.timer-fuse{animation:none!important}.card-hover-preview,.battle-hover-preview{transition:none!important}}\n'''
+              w(p,css)
+          PY
+      - name: Commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/page.tsx app/globals.css
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Repair card previews and combat controls [automation]"
+          git push origin HEAD:fix/combat-ui-timer-tests
