@@ -1,0 +1,63 @@
+name: Verify combat fixes
+
+on:
+  push:
+    branches: [fix/combat-ui-timer-tests]
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/combat-ui-timer-tests
+          fetch-depth: 0
+
+      - name: Finish remaining UI and test fixes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def read(p): return Path(p).read_text(encoding='utf-8')
+          def write(p, s): Path(p).write_text(s, encoding='utf-8')
+
+          # Project requirement: add a selectable theme with every substantive update.
+          p='app/page.tsx'; s=read(p)
+          if '["ark","ARK Command"]' not in s:
+              old='["soundwave","Soundwave Signal"],\n  ["velocitron","Velocitron Raceway"],'
+              new='["soundwave","Soundwave Signal"],\n  ["velocitron","Velocitron Raceway"],\n  ["ark","ARK Command"],'
+              if old not in s: raise SystemExit('theme insertion target missing')
+              s=s.replace(old,new,1)
+          write(p,s)
+
+          # Battle-card detail should be able to extend out of the scrolling card grid.
+          p='app/globals.css'; css=read(p)
+          css += '\n/* Final preview overflow */\n.battle-hand{overflow:visible!important;max-height:none!important}\n'
+          write(p,css)
+
+          # Functional multiplayer timer + forfeit regression test.
+          test=Path('tests/multiplayer-timer.test.mjs')
+          if not test.exists():
+              test.write_text(r'''import assert from "node:assert/strict";\nimport { spawn } from "node:child_process";\nimport test from "node:test";\nimport { io } from "socket.io-client";\n\nconst port = 3198;\nconst origin = "https://pugtimusprime.github.io";\nfunction once(socket,event,timeout=3000){return new Promise((resolve,reject)=>{const t=setTimeout(()=>reject(new Error(`Timed out waiting for ${event}`)),timeout);socket.once(event,p=>{clearTimeout(t);resolve(p)});});}\nfunction waitServer(server){return new Promise((resolve,reject)=>{const t=setTimeout(()=>reject(new Error("Timed out starting server")),10000);server.stdout.setEncoding("utf8");server.stdout.on("data",d=>{if(d.includes("multiplayer server listening")){clearTimeout(t);resolve();}});server.once("error",e=>{clearTimeout(t);reject(e)});});}\n\ntest("multiplayer turn timer expires and forfeit ends the match",async()=>{\n  const server=spawn(process.execPath,["server.mjs"],{env:{...process.env,PORT:String(port),CLIENT_ORIGIN:origin,TURN_DURATION_MS:"120"},stdio:["ignore","pipe","pipe"]});\n  await waitServer(server);\n  const a=io(`http://127.0.0.1:${port}`,{extraHeaders:{Origin:origin},reconnection:false});\n  const b=io(`http://127.0.0.1:${port}`,{extraHeaders:{Origin:origin},reconnection:false});\n  try{\n    await Promise.all([once(a,"connect"),once(b,"connect")]);\n    await Promise.all([new Promise(r=>a.emit("join-room",{code:"TIMER9",name:"Alpha"},r)),new Promise(r=>b.emit("join-room",{code:"TIMER9",name:"Beta"},r))]);\n    const readyA=once(a,"match-ready"),readyB=once(b,"match-ready");a.emit("set-ready",true);b.emit("set-ready",true);await Promise.all([readyA,readyB]);\n    await Promise.all([new Promise(r=>a.emit("submit-deck",["a1","a2","a3","a4","a5","a6","a7","a8","a9"],r)),new Promise(r=>b.emit("submit-deck",["b1","b2","b3","b4","b5","b6","b7","b8","b9"],r))]);\n    await Promise.all([once(a,"decks-ready"),once(b,"decks-ready")]);\n    a.emit("submit-deployment",{board:["a1","a2","a3","a4","a5","a6",null,null,null],backups:["a7","a8","a9"]});\n    b.emit("submit-deployment",{board:["b1","b2","b3","b4","b5","b6",null,null,null],backups:["b7","b8","b9"]});\n    const firstA=once(a,"turn-state"),firstB=once(b,"turn-state");\n    const first=await Promise.all([firstA,firstB]);\n    const initial=first.find(state=>state.yourTurn);\n    assert.ok(initial);\n    assert.equal(initial.turnDuration,120);\n    assert.ok(initial.turnDeadline>Date.now());\n    const nextA=once(a,"turn-state",2000),nextB=once(b,"turn-state",2000);\n    const next=await Promise.all([nextA,nextB]);\n    assert.notEqual(next[0].yourTurn,next[1].yourTurn);\n    const over=once(a,"match-over"),otherOver=once(b,"match-over");\n    const forfeitSocket=next[0].yourTurn?a:b;\n    forfeitSocket.emit("forfeit");\n    const results=await Promise.all([over,otherOver]);\n    assert.equal(results[0].reason,"forfeit");\n    assert.equal(results[1].winnerId,results[0].winnerId);\n  }finally{a.disconnect();b.disconnect();server.kill("SIGTERM");}\n});\n'''.replace('\\n','\n'),encoding='utf-8')
+          PY
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Run complete test suite
+        env:
+          TURN_DURATION_MS: 120
+        run: npm test
+      - name: Commit verified fixes
+        shell: bash
+        run: |
+          if git log -1 --pretty=%B | grep -q '\[automation\]'; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/page.tsx app/globals.css tests/multiplayer-timer.test.mjs
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Verify combat timer and UI fixes [automation]"
+          git push origin HEAD:fix/combat-ui-timer-tests
