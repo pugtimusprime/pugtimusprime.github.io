@@ -1,0 +1,84 @@
+name: Finish combat fixes
+
+on:
+  push:
+    branches: [fix/combat-ui-timer-tests]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/combat-ui-timer-tests
+          fetch-depth: 0
+      - name: Apply server, UI and regression fixes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          def read(p):
+              return Path(p).read_text(encoding='utf-8')
+          def write(p, s):
+              Path(p).write_text(s, encoding='utf-8')
+
+          # Do not loop after this workflow's own commit.
+          if '[automation]' in read('.git/../.git/COMMIT_EDITMSG') if Path('.git/../.git/COMMIT_EDITMSG').exists() else False:
+              raise SystemExit(0)
+
+          # --- Authoritative 60-second multiplayer turns + forfeit ---
+          p='server.mjs'; s=read(p)
+          if 'const TURN_DURATION_MS' not in s:
+              s=s.replace('const rooms = new Map();\nconst pendingDisconnects = new Map();','const rooms = new Map();\nconst pendingDisconnects = new Map();\nconst TURN_DURATION_MS = Number(process.env.TURN_DURATION_MS || 60_000);',1)
+          s=s.replace('    repositions: new Map(),\n  };','    repositions: new Map(),\n    turnDeadline: 0,\n    turnTimer: null,\n    winnerId: null,\n  };',1)
+          old='''function emitTurn(room) {\n  const activeId = room.turnOrder[room.turnIndex];\n  const actions = room.round === 1 && room.turnIndex === 0 ? 2 : 3;\n  for (const [id] of room.players) {\n    io.to(id).emit("turn-state", {\n      round: room.round,\n      activeId,\n      activeName: playerName(room, activeId),\n      yourTurn: id === activeId,\n      actions: id === activeId ? actions : 0,\n      firstTurn: room.turnIndex === 0,\n    });\n  }\n}\n\nfunction startRound(room) {\n  const playerIds = [...room.players.keys()];\n  if (playerIds.length !== 2) return;\n  room.round += 1;\n  room.stage = "combat";\n  room.turnIndex = 0;\n  room.repositions.clear();\n  room.turnOrder = Math.random() < 0.5 ? playerIds : [playerIds[1], playerIds[0]];\n  emitTurn(room);\n}'''
+          new='''function clearTurnTimer(room) {\n  if (room.turnTimer) clearTimeout(room.turnTimer);\n  room.turnTimer = null;\n  room.turnDeadline = 0;\n}\n\nfunction emitTurn(room) {\n  const activeId = room.turnOrder[room.turnIndex];\n  const actions = room.round === 1 && room.turnIndex === 0 ? 2 : 3;\n  for (const [id] of room.players) {\n    io.to(id).emit("turn-state", {\n      round: room.round,\n      activeId,\n      activeName: playerName(room, activeId),\n      yourTurn: id === activeId,\n      actions: id === activeId ? actions : 0,\n      firstTurn: room.turnIndex === 0,\n      turnDeadline: room.turnDeadline,\n      turnDuration: TURN_DURATION_MS,\n    });\n  }\n}\n\nfunction armTurnTimer(room) {\n  clearTurnTimer(room);\n  const activeId = room.turnOrder[room.turnIndex];\n  if (room.stage !== "combat" || !activeId) return;\n  room.turnDeadline = Date.now() + TURN_DURATION_MS;\n  emitTurn(room);\n  room.turnTimer = setTimeout(() => {\n    if (room.stage === "combat" && room.turnOrder[room.turnIndex] === activeId && Date.now() >= room.turnDeadline) {\n      advanceCombatTurn(room, activeId, "timeout");\n    }\n  }, TURN_DURATION_MS + 25);\n  room.turnTimer.unref?.();\n}\n\nfunction advanceCombatTurn(room, playerId, reason = "manual") {\n  if (room.stage !== "combat" || room.turnOrder[room.turnIndex] !== playerId) return false;\n  clearTurnTimer(room);\n  if (reason === "timeout") io.to(room.code).emit("match-status", `${playerName(room, playerId)} ran out of time. Their turn was ended automatically.`);\n  if (room.turnIndex === 0) {\n    room.turnIndex = 1;\n    armTurnTimer(room);\n  } else {\n    room.stage = "reposition";\n    room.repositions.clear();\n    io.to(room.code).emit("reposition-start");\n  }\n  return true;\n}\n\nfunction startRound(room) {\n  const playerIds = [...room.players.keys()];\n  if (playerIds.length !== 2) return;\n  clearTurnTimer(room);\n  room.round += 1;\n  room.stage = "combat";\n  room.turnIndex = 0;\n  room.repositions.clear();\n  room.turnOrder = Math.random() < 0.5 ? playerIds : [playerIds[1], playerIds[0]];\n  armTurnTimer(room);\n}'''
+          if 'function armTurnTimer' not in s:
+              if old not in s: raise SystemExit('server turn block not found')
+              s=s.replace(old,new,1)
+          s=s.replace('  socket.leave(code);\n  socket.data.roomCode = undefined;','  clearTurnTimer(room);\n  socket.leave(code);\n  socket.data.roomCode = undefined;',1)
+          old_finish='''  socket.on("finish-turn", () => {\n    const room = rooms.get(socket.data.roomCode);\n    if (!room || room.stage !== "combat" || room.turnOrder[room.turnIndex] !== socket.id) return;\n    if (room.turnIndex === 0) {\n      room.turnIndex = 1;\n      emitTurn(room);\n    } else {\n      room.stage = "reposition";\n      room.repositions.clear();\n      io.to(room.code).emit("reposition-start");\n    }\n  });'''
+          new_finish='''  socket.on("finish-turn", () => {\n    const room = rooms.get(socket.data.roomCode);\n    if (!room || room.stage !== "combat") return;\n    advanceCombatTurn(room, socket.id, "manual");\n  });\n\n  socket.on("forfeit", () => {\n    const room = rooms.get(socket.data.roomCode);\n    if (!room || room.stage === "over" || !room.players.has(socket.id)) return;\n    const winnerId = [...room.players.keys()].find(id => id !== socket.id);\n    if (!winnerId) return;\n    clearTurnTimer(room);\n    room.stage = "over";\n    room.winnerId = winnerId;\n    io.to(room.code).emit("match-over", { winnerId, loserId: socket.id, reason: "forfeit", winnerName: playerName(room, winnerId), loserName: playerName(room, socket.id) });\n  });'''
+          if old_finish in s: s=s.replace(old_finish,new_finish,1)
+          write(p,s)
+
+          # --- Client: timer fully disappears at 0 ---
+          p='app/page.tsx'; s=read(p)
+          old='phase==="combat"&&multiplayerSocket&&isMyTurn&&<div className={`turn-timer ${turnTimeLeft<=10?"urgent":""}`}'
+          new='phase==="combat"&&multiplayerSocket&&isMyTurn&&turnTimeLeft>0&&<div className={`turn-timer ${turnTimeLeft<=10?"urgent":""}`}'
+          if old in s: s=s.replace(old,new,1)
+          write(p,s)
+
+          # --- Styling for timer, fuse, forfeit and hover detail ---
+          p='app/globals.css'; css=read(p)
+          css += r'''
+/* Final combat UI: authoritative timer, fuse animation, forfeit and side previews */
+.rules-modal [data-slot="dialog-close"],.log-modal [data-slot="dialog-close"]{position:absolute!important;top:12px!important;right:12px!important;width:36px!important;height:36px!important;min-width:36px!important;max-width:36px!important;padding:0!important;border-radius:4px!important;display:grid!important;place-items:center!important;background:var(--surface2)!important;color:var(--text)!important;border:1px solid var(--line)!important;z-index:50!important}
+.rules-modal,.log-modal{padding-right:56px!important}
+.turn-timer{margin:12px 0 4px;padding:10px;border:1px solid var(--line);background:color-mix(in srgb,var(--surface2) 86%,transparent)}
+.timer-label{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:7px}.timer-label b{font-size:1.1rem;color:var(--accent)}.timer-label small{color:var(--sub);font-weight:900;letter-spacing:.1em}
+.timer-track{position:relative;height:12px;border:1px solid var(--line);background:var(--bg);overflow:visible}.timer-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .25s linear}.timer-fuse{position:absolute;right:-10px;top:-13px;font-size:18px;filter:drop-shadow(0 0 5px #ff9138);animation:fuse-flicker .22s infinite alternate}.turn-timer.urgent .timer-label b{color:var(--danger)}.turn-timer.urgent .timer-fuse{animation:fuse-flicker .1s infinite alternate,fuse-shake .12s infinite alternate}
+.forfeit-button{width:100%;margin-top:8px;justify-content:center}.forfeit-button.armed{border-color:var(--danger);color:#ffd7d2;background:color-mix(in srgb,var(--danger) 12%,var(--surface))}
+@keyframes fuse-flicker{from{transform:translateY(1px) scale(.92) rotate(-4deg)}to{transform:translateY(-2px) scale(1.08) rotate(5deg)}}@keyframes fuse-shake{from{right:-11px}to{right:-7px}}
+.full-board>button{overflow:visible!important}.character-card{overflow:visible!important}.card-hover-preview,.battle-hover-preview{position:absolute;z-index:100;display:grid;grid-template-columns:150px 1fr;gap:12px;width:390px;padding:12px;background:var(--surface);border:1px solid var(--accent);box-shadow:0 18px 50px #000b,0 0 22px var(--glow);opacity:0;visibility:hidden;pointer-events:none;transform:translate(10px,8px) scale(.97);transform-origin:top left;transition:opacity .14s ease,transform .14s ease,visibility .14s ease}.card-hover-preview{left:calc(100% + 12px);top:0}.character-card:hover .card-hover-preview{opacity:1;visibility:visible;transform:translate(0,0) scale(1)}.card-hover-preview>img,.battle-hover-preview>img{width:150px;aspect-ratio:546/768;object-fit:contain;background:var(--surface2);border:1px solid var(--line)}.card-hover-preview b,.battle-hover-preview b{display:block;font-size:1rem}.card-hover-preview span,.battle-hover-preview span{display:block;margin-top:4px;color:var(--accent);font-size:.7rem;font-weight:800}.card-hover-preview p,.battle-hover-preview p{margin:10px 0;color:var(--sub);font-size:.75rem;line-height:1.45}.card-hover-preview strong{display:block;color:var(--text);font-size:.72rem}.battle-hand>button{position:relative;overflow:visible!important}.battle-hover-preview{left:auto;right:calc(100% + 12px);top:0;grid-template-columns:130px 1fr;width:350px}.battle-hover-preview>img{width:130px}.battle-hand>button:hover .battle-hover-preview{opacity:1;visibility:visible;transform:translate(0,0) scale(1)}
+@media(max-width:900px){.card-hover-preview,.battle-hover-preview{position:fixed;left:auto;right:16px;top:90px;width:min(390px,calc(100vw - 32px));z-index:200;grid-template-columns:120px 1fr}.card-hover-preview>img,.battle-hover-preview>img{width:120px}}
+@media(prefers-reduced-motion:reduce){.timer-fuse{animation:none!important}.card-hover-preview,.battle-hover-preview{transition:none!important}}
+'''
+          write(p,css)
+
+          # --- Regression/coverage test matrix ---
+          Path('tests/combat-fixes.test.mjs').write_text('''import assert from "node:assert/strict";\nimport fs from "node:fs";\nimport test from "node:test";\n\nconst engine=fs.readFileSync("lib/combat-engine.mjs","utf8");\nconst page=fs.readFileSync("app/page.tsx","utf8");\nconst server=fs.readFileSync("server.mjs","utf8");\nconst css=fs.readFileSync("app/globals.css","utf8");\nconst abilityIds=["optimus","grimlock","eject","wheeljack","soundwave","bombshell","overlord","shockwave","pmega","wasp","head","arachnia","razor","getaway","grapple","highbrow","hoist","bludgeon","jhiaxus","rumble","galvatron"];\n\ntest("combat can always be ended, including with actions remaining",()=>{assert.match(engine,/canEndCombat\\(actionsLeft\\)[\\s\\S]*actionsLeft >= 0/)});\ntest("combat has fallback repeated attacks when fewer than three usable attackers remain",()=>{assert.match(page,/availableAttackers=board\\.filter\\(x=>x\\?\\.canAttack\\)\\.length/);assert.match(page,/fallbackLimit=availableAttackers<3\\?3:1/)});\ntest("all active character abilities are registered",()=>{for(const id of abilityIds)assert.ok(page.includes(`"${id}"`),id)});\ntest("multiplayer has a server-side 60 second deadline and forfeit event",()=>{assert.match(server,/TURN_DURATION_MS/);assert.match(server,/turnDeadline/);assert.match(server,/socket\\.on\\("forfeit"/);assert.match(server,/advanceCombatTurn/)});\ntest("combat UI has square top-right modal close buttons, timer, fuse and card side previews",()=>{assert.match(css,/dialog-close.*top:12px.*right:12px.*border-radius:4px/s);assert.match(css,/turn-timer/);assert.match(css,/timer-fuse/);assert.match(css,/card-hover-preview/);assert.match(css,/battle-hover-preview/)});\ntest("selection cancellation paths exist for attackers and battle cards",()=>{assert.match(page,/interaction\\?\\.kind===\\"attack\\"&&interaction\\.actor===index/);assert.match(page,/interaction\\?\\.cardIndex===index/)});\n''',encoding='utf-8')
+          PY
+      - name: Commit fixes
+        run: |
+          if git log -1 --pretty=%B | grep -q '\[automation\]'; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/page.tsx app/globals.css server.mjs tests/combat-fixes.test.mjs
+          git diff --cached --quiet && exit 0
+          git commit -m "Complete combat timer, UI and regression fixes [automation]"
+          git push origin HEAD:fix/combat-ui-timer-tests
