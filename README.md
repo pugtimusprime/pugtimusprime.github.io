@@ -48,7 +48,7 @@ Each round follows this order:
 
 The randomly selected first player gets two combat actions on the opening turn of round 1. Every later attack turn normally has three actions.
 
-An online attack turn lasts one minute. The shrinking fuse bar shows the remaining time. When it reaches zero, the server automatically ends that player's turn. A player may also end early with unused actions, which prevents a match from getting stuck when no useful move remains.
+An online attack turn lasts one minute. The shrinking fuse bar shows the remaining time. When it reaches zero, the server automatically ends that player's turn. A player may also end early with unused actions, which prevents a match from getting stuck when no useful move remains. The combined Reinforcement and Reposition Phase has its own 30-second fuse; when it expires, required replacements are filled and unfinished positions lock automatically so an absent player cannot stall the match.
 
 Either player may forfeit. A forfeit immediately awards victory to the opponent.
 
@@ -177,4 +177,4 @@ Pushing the production branch updates the GitHub Pages client and triggers Rende
 - Health check: `/health`
 - `CLIENT_ORIGIN=https://pugtimusprime.github.io`
 
-The server is intentionally authoritative for room readiness, deck and deployment gates, attack-turn order, the one-minute timer, Reposition Phase entry, and forfeits. Combat results are sent immediately to the opponent so both boards remain synchronized.
+The server is intentionally authoritative for room readiness, deck and deployment gates, attack-turn order, the one-minute attack timer, the 30-second Reposition Phase timer, phase entry, and forfeits. Combat results are sent immediately to the opponent so both boards remain synchronized.

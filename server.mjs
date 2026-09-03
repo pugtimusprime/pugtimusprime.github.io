@@ -16,9 +16,10 @@ const io = new Server(httpServer, {
 const rooms = new Map();
 const pendingDisconnects = new Map();
 const TURN_DURATION_MS = Math.max(100, Number(process.env.TURN_DURATION_MS || 60_000));
+const REPOSITION_DURATION_MS = Math.max(100, Number(process.env.REPOSITION_DURATION_MS || 30_000));
 
 app.get("/", (_request, response) => response.json({ service: "Hidden Front multiplayer", status: "online" }));
-app.get("/health", (_request, response) => response.json({ ok: true, rooms: rooms.size, version: 4 }));
+app.get("/health", (_request, response) => response.json({ ok: true, rooms: rooms.size, version: 5 }));
 
 function clean(value, max) {
   return typeof value === "string" ? value.trim().replace(/[^a-zA-Z0-9 _-]/g, "").slice(0, max) : "";
@@ -36,8 +37,10 @@ function createRoom(code) {
     turnOrder: [],
     turnIndex: 0,
     repositions: new Map(),
+    repositionSnapshots: new Map(),
     turnTimer: null,
     turnDeadline: 0,
+    repositionDeadline: 0,
     skipRepositionRound: 0,
   };
 }
@@ -74,6 +77,56 @@ function clearTurnTimer(room) {
   if (room.turnTimer) clearTimeout(room.turnTimer);
   room.turnTimer = null;
   room.turnDeadline = 0;
+  room.repositionDeadline = 0;
+}
+
+function withRequiredReinforcements(deployment) {
+  const board = Array.isArray(deployment?.board) ? deployment.board.slice(0, 9) : Array(9).fill(null);
+  while (board.length < 9) board.push(null);
+  const backups = Array.isArray(deployment?.backups) ? [...deployment.backups] : [];
+  while (board.filter(Boolean).length < 6 && backups.length) {
+    const vacancy = board.findIndex((card) => !card);
+    if (vacancy < 0) break;
+    board[vacancy] = backups.shift();
+  }
+  return { board, backups };
+}
+
+function completeReposition(room, expired = false) {
+  clearTurnTimer(room);
+  for (const [id] of room.players) {
+    if (room.repositions.has(id)) continue;
+    const latest = room.repositionSnapshots.get(id) || room.deployments.get(id);
+    if (latest) room.repositions.set(id, withRequiredReinforcements(latest));
+  }
+  if (room.repositions.size !== room.players.size) return;
+  if (expired) io.to(room.code).emit("match-status", "The 30-second reposition timer expired. Unfinished positions were locked automatically.");
+  for (const [id] of room.players) {
+    const opponent = [...room.repositions.entries()].find(([other]) => other !== id)?.[1];
+    io.to(id).emit("opponent-repositioned", { opponent });
+  }
+  room.deployments = new Map(room.repositions);
+  startRound(room);
+}
+
+function beginReposition(room) {
+  room.stage = "reposition";
+  room.repositions.clear();
+  room.repositionSnapshots.clear();
+  const locked = room.skipRepositionRound === room.round;
+  room.repositionDeadline = Date.now() + REPOSITION_DURATION_MS;
+  io.to(room.code).emit("reposition-start", {
+    moves: locked ? 0 : 2,
+    locked,
+    repositionEndsAt: room.repositionDeadline,
+    repositionDurationMs: REPOSITION_DURATION_MS,
+  });
+  const scheduledRound = room.round;
+  room.turnTimer = setTimeout(() => {
+    if (room.stage !== "reposition" || room.round !== scheduledRound) return;
+    completeReposition(room, true);
+  }, REPOSITION_DURATION_MS);
+  room.turnTimer.unref?.();
 }
 
 function emitTurn(room) {
@@ -109,10 +162,7 @@ function advanceTurn(room) {
     emitTurn(room);
     return;
   }
-  room.stage = "reposition";
-  room.repositions.clear();
-  const locked = room.skipRepositionRound === room.round;
-  io.to(room.code).emit("reposition-start", { moves: locked ? 0 : 2, locked });
+  beginReposition(room);
 }
 
 function startRound(room) {
@@ -140,6 +190,7 @@ function detach(socket) {
   room.decks.delete(socket.id);
   room.deployments.delete(socket.id);
   room.repositions.delete(socket.id);
+  room.repositionSnapshots.delete(socket.id);
   if (room.players.size === 0) { clearTurnTimer(room); rooms.delete(code); }
   else {
     clearTurnTimer(room);
@@ -154,7 +205,7 @@ io.on("connection", (socket) => {
   const pending = pendingDisconnects.get(socket.id);
   if (pending) clearTimeout(pending.timer);
   pendingDisconnects.delete(socket.id);
-  socket.emit("server-ready", { version: 4, recovered: socket.recovered });
+  socket.emit("server-ready", { version: 5, recovered: socket.recovered });
   if (socket.recovered) syncPlayer(socket);
 
   socket.on("join-room", (payload = {}, reply = () => {}) => {
@@ -250,16 +301,18 @@ io.on("connection", (socket) => {
     socket.to(room.code).emit("opponent-forfeited");
   });
 
+  socket.on("reposition-snapshot", (deployment) => {
+    const room = rooms.get(socket.data.roomCode);
+    if (!room || room.stage !== "reposition" || !deployment || !Array.isArray(deployment.board) || !Array.isArray(deployment.backups) || deployment.board.length !== 9) return;
+    room.repositionSnapshots.set(socket.id, deployment);
+  });
+
   socket.on("finish-reposition", (deployment) => {
     const room = rooms.get(socket.data.roomCode);
     if (!room || room.stage !== "reposition" || !deployment || !Array.isArray(deployment.board) || !Array.isArray(deployment.backups)) return;
-    room.repositions.set(socket.id, deployment);
+    room.repositions.set(socket.id, withRequiredReinforcements(deployment));
     if (room.repositions.size !== 2) return socket.emit("match-status", "Repositioning locked. Waiting for your opponent.");
-    for (const [id] of room.players) {
-      const opponent = [...room.repositions.entries()].find(([other]) => other !== id)?.[1];
-      io.to(id).emit("opponent-repositioned", { opponent });
-    }
-    startRound(room);
+    completeReposition(room);
   });
 
   socket.on("leave-room", () => detach(socket));

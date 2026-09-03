@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 553 774" role="img" aria-labelledby="title description">
+  <title id="title">War Dawn</title>
+  <desc id="description">Rare Battle Card. Choose an enemy row; everyone in it takes 15 damage.</desc>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#101c37"/>
+      <stop offset="0.5" stop-color="#315aa0"/>
+      <stop offset="0.72" stop-color="#ff684b"/>
+      <stop offset="1" stop-color="#160e18"/>
+    </linearGradient>
+    <radialGradient id="sun">
+      <stop offset="0" stop-color="#fff6b5"/>
+      <stop offset="0.45" stop-color="#ffd04a"/>
+      <stop offset="1" stop-color="#ff5a36" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#07101f" stop-opacity="0.96"/>
+      <stop offset="1" stop-color="#132844" stop-opacity="0.96"/>
+    </linearGradient>
+  </defs>
+  <rect width="553" height="774" rx="22" fill="#050914"/>
+  <rect x="9" y="9" width="535" height="756" rx="17" fill="url(#sky)" stroke="#69d4ff" stroke-width="7"/>
+  <path d="M32 86H521L493 135H60Z" fill="#07101f" stroke="#69d4ff" stroke-width="4"/>
+  <text x="276.5" y="119" text-anchor="middle" fill="#f6fbff" font-family="Arial,Helvetica,sans-serif" font-size="40" font-weight="900" letter-spacing="4">WAR DAWN</text>
+  <circle cx="276" cy="323" r="176" fill="url(#sun)"/>
+  <g fill="#fff1a8" opacity="0.44">
+    <path d="M276 145L291 276H261Z"/>
+    <path d="M112 216L235 292L218 317Z"/>
+    <path d="M440 216L334 317L317 292Z"/>
+    <path d="M70 348L225 331L229 360Z"/>
+    <path d="M483 348L323 360L328 331Z"/>
+  </g>
+  <path d="M24 488L123 402L185 443L262 354L343 438L401 394L529 492V585H24Z" fill="#0a1422" opacity="0.92"/>
+  <rect x="26" y="505" width="501" height="221" rx="8" fill="url(#panel)" stroke="#69d4ff" stroke-width="4"/>
+  <rect x="47" y="528" width="112" height="32" rx="4" fill="#e8493f"/>
+  <text x="103" y="551" text-anchor="middle" fill="#fff" font-family="Arial,Helvetica,sans-serif" font-size="18" font-weight="900" letter-spacing="3">RARE</text>
+  <text x="52" y="604" fill="#f5fbff" font-family="Arial,Helvetica,sans-serif" font-size="24" font-weight="700">
+    <tspan x="52" dy="0">CHOOSE AN ENEMY ROW.</tspan>
+    <tspan x="52" dy="38">EVERY VULNERABLE CHARACTER</tspan>
+    <tspan x="52" dy="38">IN IT TAKES 15 DAMAGE.</tspan>
+  </text>
+  <path d="M28 742H525" stroke="#69d4ff" stroke-width="3"/>
+  <text x="276.5" y="756" text-anchor="middle" fill="#b9dff2" font-family="Arial,Helvetica,sans-serif" font-size="13" font-weight="700" letter-spacing="5">BATTLE CARD</text>
+</svg>

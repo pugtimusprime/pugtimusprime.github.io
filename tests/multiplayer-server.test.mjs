@@ -30,7 +30,7 @@ function once(socket, event) {
 }
 
 test("multiplayer rounds gate turns and repositioning", async () => {
-  const server = spawn(process.execPath, ["server.mjs"], { env: { ...process.env, PORT: String(port), CLIENT_ORIGIN: origin, TURN_DURATION_MS:"2500" }, stdio: ["ignore", "pipe", "pipe"] });
+  const server = spawn(process.execPath, ["server.mjs"], { env: { ...process.env, PORT: String(port), CLIENT_ORIGIN: origin, TURN_DURATION_MS:"2500", REPOSITION_DURATION_MS:"500" }, stdio: ["ignore", "pipe", "pipe"] });
   await waitForServer(server);
   const a = io(`http://127.0.0.1:${port}`, { extraHeaders: { Origin: origin }, reconnection: false });
   const b = io(`http://127.0.0.1:${port}`, { extraHeaders: { Origin: origin }, reconnection: false });
@@ -54,8 +54,10 @@ test("multiplayer rounds gate turns and repositioning", async () => {
     await Promise.all([decksA, decksB]);
     const deployA = once(a, "deployments-ready"), deployB = once(b, "deployments-ready");
     const turnA = once(a, "turn-state"), turnB = once(b, "turn-state");
-    a.emit("submit-deployment", { board:["a1","a2","a3","a4","a5","a6",null,null,null], backups:["a7","a8","a9"] });
-    b.emit("submit-deployment", { board:["b1","b2","b3","b4","b5","b6",null,null,null], backups:["b7","b8","b9"] });
+    const deploymentA = { board:["a1","a2","a3","a4","a5","a6",null,null,null], backups:["a7","a8","a9"] };
+    const deploymentB = { board:["b1","b2","b3","b4","b5","b6",null,null,null], backups:["b7","b8","b9"] };
+    a.emit("submit-deployment", deploymentA);
+    b.emit("submit-deployment", deploymentB);
     await Promise.all([deployA, deployB]);
     const initial = await Promise.all([turnA, turnB]);
     const firstIndex = initial.findIndex(state => state.yourTurn);
@@ -79,9 +81,15 @@ test("multiplayer rounds gate turns and repositioning", async () => {
     const repositionA = once(a, "reposition-start"), repositionB = once(b, "reposition-start");
     second.emit("finish-turn"); const reposition = await Promise.all([repositionA, repositionB]);
     assert.ok(reposition.every(state => state.locked && state.moves === 0));
+    assert.ok(reposition.every(state => state.repositionDurationMs === 500));
+    assert.ok(reposition.every(state => state.repositionEndsAt > Date.now()));
     const round2A = once(a, "turn-state"), round2B = once(b, "turn-state");
-    a.emit("finish-reposition", { board:[], backups:[] }); b.emit("finish-reposition", { board:[], backups:[] });
+    const updatedA = once(a, "opponent-repositioned"), updatedB = once(b, "opponent-repositioned");
+    a.emit("reposition-snapshot", deploymentA);
+    b.emit("reposition-snapshot", deploymentB);
+    a.emit("finish-reposition", deploymentA);
     const round2 = await Promise.all([round2A, round2B]);
+    await Promise.all([updatedA, updatedB]);
     assert.equal(round2[0].round, 2); assert.equal(round2[1].round, 2);
     assert.equal(round2.find(state => state.yourTurn).actions, 3);
     const autoA = once(a, "turn-state"), autoB = once(b, "turn-state");

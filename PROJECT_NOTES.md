@@ -14,3 +14,4 @@ Theme history:
 - Deck-sync and modal update: Soundwave Signal, a navy communications-console theme with magenta signal bars, blue channel lighting and cassette-deck framing.
 - Character-roster update: Velocitron Raceway, a dark asphalt-and-steel racing theme with neon-lime lane energy, orange speed accents and diagonal track markings.
 - Maximal-expansion update: Axalon Dawn, a warm ivory-and-jungle-teal exploration-console theme with coral sunrise accents, topographic rings and brushed-alloy surfaces.
+- Reposition-timer update: Axalon Dawn was softened into a low-glare deep-jungle night palette, and Earth Command Bunker was added as an olive field-console theme with amber CRT lighting, riveted panels and map-grid atmosphere.

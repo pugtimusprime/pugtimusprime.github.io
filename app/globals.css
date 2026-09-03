@@ -99,3 +99,20 @@ html[data-theme="axalon"] .stage-header,html[data-theme="axalon"] .rail-panel,ht
 .card-inspector{position:fixed;right:18px;top:82px;z-index:40;width:min(420px,31vw);display:grid;grid-template-columns:46% 1fr;gap:15px;padding:12px;background:color-mix(in srgb,var(--surface) 97%,transparent);border:1px solid var(--accent);box-shadow:0 22px 55px #0008,0 0 25px var(--glow);pointer-events:none;animation:inspector-in .16s ease-out}.card-inspector>img{width:100%;aspect-ratio:546/768;object-fit:contain;background:var(--surface2)}.card-inspector h2{font-size:1.1rem;margin:5px 0}.card-inspector p{font-size:.78rem;line-height:1.45;color:var(--sub)}.card-inspector span{display:flex;align-items:center;gap:6px;margin-top:7px;font-size:.75rem;color:var(--text)}@keyframes inspector-in{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:none}}
 @media(max-width:900px){.card-inspector{display:none}.turn-timer{width:180px}}
 @media(max-width:680px){.turn-timer{order:5;width:100%;margin:0}.stage-header{flex-wrap:wrap}}
+
+/* Version 12: reposition fuse, hover-only details, low-glare Axalon and Earth Command Bunker */
+html[data-theme="axalon"]{--bg:#061310;--surface:#0d211c;--surface2:#173129;--text:#e3eee8;--sub:#91aaa0;--accent:#45b7a1;--accent2:#c77b4d;--danger:#df6266;--line:#315349;--glow:#45b7a133;color-scheme:dark}
+html[data-theme="axalon"] body{background-color:var(--bg);background-image:radial-gradient(circle at 14% 18%,transparent 0 38px,#45b7a10e 39px 41px,transparent 42px 65px,#45b7a108 66px 68px,transparent 69px),radial-gradient(circle at 83% 12%,#c77b4d10,transparent 30%),linear-gradient(150deg,#17312955,transparent 55%);background-size:180px 180px,auto,auto}
+html[data-theme="axalon"] .stage-header,html[data-theme="axalon"] .rail-panel,html[data-theme="axalon"] .start-card,html[data-theme="axalon"] .builder-head{border-color:#45b7a155;box-shadow:inset 4px 0 0 #c77b4d66,0 14px 34px #0007}
+html[data-theme="earthbunker"]{--bg:#090d08;--surface:#141a12;--surface2:#20291b;--text:#ece5bc;--sub:#a7aa87;--accent:#d0a33c;--accent2:#789c58;--danger:#cf6048;--line:#465239;--glow:#d0a33c3b;color-scheme:dark}
+html[data-theme="earthbunker"] body{background-color:var(--bg);background-image:linear-gradient(#d0a33c0c 1px,transparent 1px),linear-gradient(90deg,#d0a33c0c 1px,transparent 1px),repeating-linear-gradient(135deg,transparent 0 34px,#789c5807 35px 36px);background-size:32px 32px,32px 32px,72px 72px}
+html[data-theme="earthbunker"] .stage-header,html[data-theme="earthbunker"] .rail-panel,html[data-theme="earthbunker"] .start-card,html[data-theme="earthbunker"] .builder-head{border-color:#789c5888;box-shadow:inset 5px 0 0 #d0a33c88,inset -1px 0 0 #000,0 16px 34px #0009}
+html[data-theme="earthbunker"] .rail-panel{position:relative}
+html[data-theme="earthbunker"] .stage-header:after,html[data-theme="earthbunker"] .rail-panel:after{content:"";position:absolute;right:6px;top:6px;width:5px;height:5px;border-radius:50%;background:#77806b;box-shadow:0 0 0 1px #050705}
+.rules-modal,.log-modal{position:fixed!important;top:50%!important;left:50%!important;transform:translate(-50%,-50%)!important;margin:0!important;height:calc(100dvh - 16px)!important;max-height:calc(100dvh - 16px)!important}
+.rules-scroll,.full-history{max-height:none!important}
+.battle-card-face{display:flex;align-items:center;justify-content:center;flex-direction:column;gap:9px;padding:12%;text-align:center;background:radial-gradient(circle at 50% 18%,color-mix(in srgb,var(--accent) 36%,transparent),transparent 38%),repeating-linear-gradient(135deg,var(--surface2) 0 12px,color-mix(in srgb,var(--surface2) 72%,var(--bg)) 12px 24px);color:var(--text);border:1px solid var(--accent)}
+.battle-card-face svg{width:36%;height:auto;color:var(--accent)}
+.battle-card-face b{font-size:.76rem;line-height:1.2;text-transform:uppercase;letter-spacing:.08em}
+.battle-card-face small{font-size:.55rem;color:var(--sub);letter-spacing:.12em}
+.battle-deck-summary figure{cursor:help}

@@ -89,7 +89,7 @@ export const battleCards:Record<string,BattleInfo>={
   "Information Gathering":{rarity:"Rare",effect:"Force the opponent to reveal 3 deployed character positions.",image:"/cards/battle/information-gathering.png"},
   "Junkion Scrap":{rarity:"Rare",effect:"The opponent scraps 3 Battle Cards.",image:"/cards/battle/junkion-scrap.png"},
   "Power Of The Primes":{rarity:"Rare",effect:"Heal one character by 35.",image:"/cards/battle/power-of-the-primes.png"},
-  "War Dawn":{rarity:"Rare",effect:"Choose an enemy row; everyone in it takes 15 damage.",image:"/cards/battle/war-dawn.png"},
+  "War Dawn":{rarity:"Rare",effect:"Choose an enemy row; everyone in it takes 15 damage.",image:"/cards/battle/war-dawn.svg"},
   "Ambush Trap":{rarity:"Common",effect:"Place on a vacant friendly space. If attacked, cancel the hit and reveal the attacking enemy position.",image:""},
 };
 export const battleDeck=Object.keys(battleCards);
