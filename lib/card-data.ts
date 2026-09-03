@@ -1,6 +1,6 @@
 export type Faction = "Autobot" | "Decepticon" | "Predacon" | "Maximal";
 export type Role = "Commander" | "Scout" | "Trooper" | "Tactician";
-export type Unit = { id:string; name:string; faction:Faction; role:Role; max:number; hp:number; dmg:number; ability:string; image:string; abilityUses:number; canAttack:boolean; shield?:number; poison?:number; diveBonus?:boolean; frenzyBonus?:boolean; ravageGuard?:boolean; timedShield?:boolean; shieldUntil?:number; copiedCommanderId?:string; };
+export type Unit = { id:string; name:string; faction:Faction; role:Role; max:number; hp:number; dmg:number; ability:string; image:string; abilityUses:number; canAttack:boolean; shield?:number; poison?:number; diveBonus?:boolean; frenzyBonus?:boolean; ravageGuard?:boolean; timedShield?:boolean; shieldUntil?:number; copiedCommanderId?:string; dinobotBonus?:boolean; dinobotHitStreak?:number; optimalBoost?:boolean; };
 export type Slot = Unit | null;
 export type BattleInfo = { rarity:"Common"|"Rare"; effect:string; image:string };
 
@@ -55,10 +55,22 @@ const rows: Record<Faction, [string,string,Role,number,number,string,number][]> 
     ["arachnia","Black Arachnia","Tactician",70,10,"Choose an enemy row; everyone there takes 5 poison damage for 3 rounds. 1 use.",1],
     ["terror","Terrorsaur","Tactician",70,10,"Start with a shield that completely blocks the first attack. 1 use.",1],
   ],
-  Maximal:[["primal","Optimus Primal","Commander",100,15,"If your other Commander dies, Optimus Primal permanently gains +10 Health and +10 Damage.",0]],
+  Maximal:[
+    ["primal","Optimus Primal","Commander",100,15,"If your other Commander dies, Optimus Primal permanently gains +10 Health and +10 Damage.",0],
+    ["airrazor","Airrazor","Trooper",80,20,"If your deck contains at least 3 Maximals, Airrazor may permanently attack twice each round.",0],
+    ["cheetor","Cheetor","Scout",40,5,"If Cheetor is defeated, the character that defeated him has its position revealed permanently.",0],
+    ["depthcharge","Depthcharge","Commander",70,10,"When a Maximal on your board dies, leave a 10-Damage mine in that space. Only 1 mine may be active.",0],
+    ["dinobot","Dinobot","Trooper",60,25,"After Dinobot is attacked twice in a row, restore him to full Health. 1 use.",1],
+    ["maxgrimlock","Maximal Grimlock","Scout",50,10,"While Maximal Grimlock and Dinobot are both deployed, Dinobot's ability has 2 uses.",0],
+    ["optimal","Optimal Optimus","Commander",80,20,"If Optimus Primal or Optimus Prime is deployed with him, permanently increase Optimal Optimus to 30 Damage.",0],
+    ["tigatron","Tigatron","Tactician",50,15,"Immune to enemy Battle Card effects.",0],
+    ["rattrap","Rattrap","Scout",50,10,"Neither team may reposition cards during this round's Reposition Phase. 2 uses.",2],
+    ["rhinox","Rhinox","Tactician",70,10,"While above half Health, revive a defeated Maximal at half Health. 1 use.",1],
+    ["silverbolt","Silverbolt","Trooper",80,20,"Predacon abilities have no effect on Silverbolt.",0],
+  ],
 };
 
-const imageNames:Record<string,string>={bee:"bumblebee",sun:"sunstreaker",side:"sideswipe",pmega:"megatron-p",rampagebw:"rampage-p",head:"headstrong",arachnia:"black-arachnia",razor:"razorclaw",scorp:"scorponok",wasp:"waspinator",dive:"divebomb",terror:"terrorsaur",primal:"optimus-primal",thunder:"thundercracker"};
+const imageNames:Record<string,string>={bee:"bumblebee",sun:"sunstreaker",side:"sideswipe",pmega:"megatron-p",rampagebw:"rampage-p",head:"headstrong",arachnia:"black-arachnia",razor:"razorclaw",scorp:"scorponok",wasp:"waspinator",dive:"divebomb",terror:"terrorsaur",primal:"optimus-primal",thunder:"thundercracker",maxgrimlock:"maximal-grimlock",optimal:"optimal-optimus"};
 export const rosters=Object.fromEntries(Object.entries(rows).map(([faction,units])=>[faction,units.map(([id,name,role,max,dmg,ability,abilityUses])=>({id,name,role,max,hp:max,dmg,ability,abilityUses,canAttack:true,faction:faction as Faction,image:`/cards/characters/${imageNames[id]||id}.png`,shield:id==="terror"?1:0}))])) as Record<Faction,Unit[]>;
 export const allUnits=Object.values(rosters).flat();
 

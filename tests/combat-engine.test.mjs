@@ -55,8 +55,9 @@ test("Galvatron's timed shield blocks one hit without spending the target abilit
   assert.equal(result.blocked, true);
 });
 
-test("combat cannot end until all three actions are complete", () => {
-  assert.equal(canEndCombat(1), false);
+test("combat may end early when no useful action remains", () => {
+  assert.equal(canEndCombat(3), true);
+  assert.equal(canEndCombat(1), true);
   assert.equal(canEndCombat(0), true);
 });
 

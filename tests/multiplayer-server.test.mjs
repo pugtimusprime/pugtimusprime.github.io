@@ -30,7 +30,7 @@ function once(socket, event) {
 }
 
 test("multiplayer rounds gate turns and repositioning", async () => {
-  const server = spawn(process.execPath, ["server.mjs"], { env: { ...process.env, PORT: String(port), CLIENT_ORIGIN: origin }, stdio: ["ignore", "pipe", "pipe"] });
+  const server = spawn(process.execPath, ["server.mjs"], { env: { ...process.env, PORT: String(port), CLIENT_ORIGIN: origin, TURN_DURATION_MS:"2500" }, stdio: ["ignore", "pipe", "pipe"] });
   await waitForServer(server);
   const a = io(`http://127.0.0.1:${port}`, { extraHeaders: { Origin: origin }, reconnection: false });
   const b = io(`http://127.0.0.1:${port}`, { extraHeaders: { Origin: origin }, reconnection: false });
@@ -62,22 +62,35 @@ test("multiplayer rounds gate turns and repositioning", async () => {
     assert.notEqual(firstIndex, -1);
     assert.equal(initial[firstIndex].actions, 2);
     assert.equal(initial[1-firstIndex].actions, 0);
+    assert.equal(initial[firstIndex].turnDurationMs, 2500);
+    assert.ok(initial[firstIndex].turnEndsAt > Date.now());
     const first = firstIndex === 0 ? a : b, second = firstIndex === 0 ? b : a;
     const action = once(second, "combat-action");
     first.emit("combat-action", { kind:"attack", target:4, hit:true, damage:20, result:{ id:"x", hp:20 }, attackerName:"ignored" });
     assert.equal((await action).target, 4);
+    const lockAction = once(second, "combat-action");
+    first.emit("combat-action", { kind:"reposition-lock", round:1 });
+    assert.equal((await lockAction).kind, "reposition-lock");
     const nextA = once(a, "turn-state"), nextB = once(b, "turn-state");
     first.emit("finish-turn");
     const secondTurn = await Promise.all([nextA, nextB]);
     assert.equal(secondTurn[firstIndex].yourTurn, false);
     assert.equal(secondTurn[1-firstIndex].actions, 3);
     const repositionA = once(a, "reposition-start"), repositionB = once(b, "reposition-start");
-    second.emit("finish-turn"); await Promise.all([repositionA, repositionB]);
+    second.emit("finish-turn"); const reposition = await Promise.all([repositionA, repositionB]);
+    assert.ok(reposition.every(state => state.locked && state.moves === 0));
     const round2A = once(a, "turn-state"), round2B = once(b, "turn-state");
     a.emit("finish-reposition", { board:[], backups:[] }); b.emit("finish-reposition", { board:[], backups:[] });
     const round2 = await Promise.all([round2A, round2B]);
     assert.equal(round2[0].round, 2); assert.equal(round2[1].round, 2);
     assert.equal(round2.find(state => state.yourTurn).actions, 3);
+    const autoA = once(a, "turn-state"), autoB = once(b, "turn-state");
+    const autoAdvanced = await Promise.all([autoA, autoB]);
+    assert.equal(autoAdvanced[0].round, 2);
+    assert.notEqual(autoAdvanced.findIndex(state => state.yourTurn), round2.findIndex(state => state.yourTurn));
+    const forfeited = once(b, "opponent-forfeited");
+    a.emit("forfeit");
+    await forfeited;
   } finally {
     a.disconnect(); b.disconnect(); server.kill("SIGTERM");
   }

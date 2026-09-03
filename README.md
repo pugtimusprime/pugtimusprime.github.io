@@ -1,93 +1,180 @@
-# vinext-starter
+# Hidden Front
 
-A clean full-stack starter running on [vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and Drizzle support.
+Hidden Front is a two-player hidden-position tactical card game featuring Autobots, Decepticons, Maximals, and Predacons. Each player builds a nine-character team, secretly deploys six characters to a 3×3 grid, and tries to eliminate every opposing character by attacking unknown coordinates, using character abilities, and repositioning between rounds.
 
-## Prerequisites
+The browser game supports solo play against an automated opponent and private online matches through a small Socket.IO server.
 
-- Node.js `>=22.13.0`
-- Linux with `flock`, `curl`, and GNU `timeout`
+## Objective
 
-## Sites Lifecycle
+Defeat all nine characters on the opposing team. A character at 0 Health is moved to the defeated pile unless an ability saves or revives it. The player with no surviving deployed or Backup characters loses.
 
-The Sites lifecycle CLI runs the locked dependency install before returning this checkout. Edit the source under `app/`, then checkpoint when a coherent milestone is ready to inspect or share. The remote Sites builder runs `npm run build` against the pushed commit. Do not repeat install or build as a normal pre-checkpoint step.
+If neither team takes damage for four complete rounds, the stalemate rule decides the result:
 
-This starter does not use `wrangler.jsonc`.
+1. The team with more surviving characters wins.
+2. If tied, the team with more combined remaining Health wins.
+3. If both are still tied, the match is a draw.
 
-`install:ci` is intentionally a single, non-retrying `npm ci`. It refuses a concurrent install for the same project, consumes a matching image-seeded npm cache with `--prefer-offline` while retaining registry fallback for a missing cache object, otherwise downloads and verifies the complete vinext tarball recorded in `package-lock.json`, limits npm to one socket, and terminates a stalled install. `build` applies a short timeout. These helpers target Linux and use GNU `timeout`; they are not native macOS scripts.
+## Building a legal team
 
-Scripts that need writable project-scoped home, npm, XDG, and temporary paths use `scripts/sites-env.sh`. The `dev` and `start` scripts honor the caller's runtime environment and keep Wrangler logs inside the checkout. The generated `.sites-runtime/` directory is disposable and ignored by Git.
+Every deck contains exactly nine unique Character Cards:
 
-## Included Shape
+| Class | Required |
+|---|---:|
+| Commander | 2 |
+| Scout | 3 |
+| Trooper | 2 |
+| Tactician | 2 |
 
-- edit site code under `app/`
-- `app/chatgpt-auth.ts` provides optional dispatch-owned ChatGPT sign-in helpers
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/index.ts` reads the D1 binding from the Cloudflare Worker environment
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
+Factions can be mixed. The faction filters are only deck-building tools; they do not prevent a mixed team. Hover over a card to open a larger side preview with its faction, class, current Health, Damage, and complete ability text. Click a selected card again to remove it from the deck.
 
-## Workspace Auth Headers
+In online play, the server waits until both players have locked legal nine-card decks. Only then does each player see the opponent's nine-card roster. Exact starting positions and Backup choices stay secret.
 
-OpenAI workspace sites can read the current user's email from `oai-authenticated-user-email`.
+## Deployment
 
-SIWC-authenticated workspace sites may also receive `oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty `name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by `oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
+Choose six of your nine characters and place them anywhere on your 3×3 grid. The three unplaced characters become Backups. You can drag a card or click it and then click a destination. Clicking a selected card again cancels the selection.
 
-Treat the full name as optional and fall back to email when it is absent:
+Both online players must finish deployment before battle begins. The server then randomly chooses the first attacker.
 
-```tsx
-import { headers } from "next/headers";
+## Round sequence
 
-export default async function Home() {
-  const requestHeaders = await headers();
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
+Each round follows this order:
 
-  const displayName = fullName ?? email;
-  // ...
-}
+1. Draw one Battle Card.
+2. The first player completes their entire attack turn.
+3. The second player completes their entire attack turn.
+4. Both players deploy any required free reinforcements from Backup.
+5. Both players secretly complete their Reposition Phase.
+6. A new round begins and the first attacker is chosen again at random.
+
+The randomly selected first player gets two combat actions on the opening turn of round 1. Every later attack turn normally has three actions.
+
+An online attack turn lasts one minute. The shrinking fuse bar shows the remaining time. When it reaches zero, the server automatically ends that player's turn. A player may also end early with unused actions, which prevents a match from getting stuck when no useful move remains.
+
+Either player may forfeit. A forfeit immediately awards victory to the opponent.
+
+## Combat actions
+
+During your attack turn, one action can be used to:
+
+- attack an enemy coordinate;
+- activate an eligible active Character Ability; or
+- play a Battle Card during the opening Battle Card window.
+
+Normally each deployed character attacks once per round. If fewer than three attack-capable characters remain deployed, the survivors may attack more than once so the team can still use all three actions. Printed abilities can also change attack limits. For example, Airrazor can attack twice when her deck contains at least three Maximals, while Grimlock can gain a special three-attack turn after defeating a Commander.
+
+To attack, select one of your deployed characters and then select an enemy grid position. An empty position is a miss. An occupied position takes the attacker's Damage. A surviving card stays unidentified, but the coordinate is marked occupied for the rest of the round. Defeated characters are revealed. Incoming hits appear immediately on both players' screens, and your own damaged space receives a strong red hit effect.
+
+Cards and pending actions can be deselected by clicking the same selected card again or by using the Deselect control.
+
+## Hidden information
+
+Players know the opponent's complete nine-card roster once both decks are locked, but do not know which six began on the board, which three are in Backup, or where deployed cards are positioned.
+
+Some effects reveal positions temporarily or permanently. Cheetor, for example, permanently reveals the current position of the character that defeats him. If that character later repositions, the reveal follows the character. Other effects can conceal positions from detection.
+
+The combat history deliberately records a living target as an unknown enemy. Identity is only included when the rules reveal or defeat that card.
+
+## Battle Cards
+
+The Battle Deck contains 30 cards with no more than eight Rare cards. One card is drawn at the start of each round. A Battle Card normally costs one combat action and must be played before any other combat action that turn. Normally only one Battle Card may be played per round.
+
+Examples include:
+
+- **Armor Plating:** reduces the next damage to a chosen friendly character.
+- **War Dawn:** damages vulnerable characters in a selected enemy row.
+- **Surprise:** checks whether two selected positions are occupied.
+- **Ambush Trap:** arms an empty friendly space and cancels the next enemy attack against that coordinate.
+- **Reinforce:** exchanges a Backup and deployed character without spending a Reposition Action.
+
+Printed card wording overrides the general rules. Tigatron is immune to enemy Battle Card effects.
+
+## Character abilities
+
+Abilities are active, passive, or triggered. An active ability normally replaces an attack and costs one combat action. Limited abilities display their remaining uses. Passive and triggered abilities resolve automatically.
+
+The full roster and exact wording are shown inside the game, so this guide uses only stable examples:
+
+- **Depthcharge** can leave one hidden mine when a deployed Maximal dies. The mine deals 10 Damage to the next attacker targeting that space and is then removed.
+- **Dinobot** restores to full Health after two consecutive attacks, subject to remaining uses.
+- **Maximal Grimlock** increases Dinobot's available restoration uses while both are deployed.
+- **Rhinox** can revive a defeated Maximal at half Health while Rhinox remains above half Health.
+- **Rattrap** can prevent both teams from repositioning during the current round.
+- **Silverbolt** ignores opposing Predacon abilities.
+- **Galvatron** can grant shields from Backup.
+- **Ravage** blocks the first hit after repositioning.
+
+All registered character abilities, stats, and artwork paths are covered by automated regression tests.
+
+## Reinforcement and repositioning
+
+After both players finish attacking, empty deployed positions must be refilled from Backup until the board has six characters or no Backups remain. Required reinforcements are free.
+
+After reinforcement, each team normally receives two Reposition Actions. One action can:
+
+- move a deployed character into an empty space;
+- swap two deployed characters; or
+- exchange a deployed character with a Backup.
+
+The board may never contain more than six characters. Dragging shows a floating image of the moving card. Click-to-select controls provide the same actions for touch devices. If Rattrap blocked repositioning, required reinforcements still occur, but both players receive zero Reposition Actions and may lock in immediately.
+
+## Multiplayer setup
+
+The production client is hosted on GitHub Pages and the multiplayer server is hosted on Render.
+
+1. Open the game and choose **Multiplayer**.
+2. Leave the Render server address as `https://hidden-front-server.onrender.com`.
+3. Enter a player name and a shared room code of at least three characters.
+4. Both players connect using the same room code.
+5. Both press **I am ready**.
+6. Build and lock decks, study the revealed opponent roster, and secretly deploy six characters.
+
+Render's free service may sleep when inactive. The first connection after a quiet period can take roughly a minute while the server wakes up. Both players should keep the game page open during a match.
+
+## Development
+
+Requirements:
+
+- Node.js 22.13 or newer
+- npm
+
+Install dependencies and run the verified test suite:
+
+```bash
+npm ci
+npm test
 ```
 
-## Optional Dispatch-Owned ChatGPT Sign-In
+Run the web client for local development:
 
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs optional or required ChatGPT sign-in:
+```bash
+npm run dev
+```
 
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send anonymous visitors through Sign in with ChatGPT.
-- In a Server Component, start sign-in with `<a href={chatGPTSignInPath(returnTo)} target="_top">`. The auth helper module is server-only; do not import it into a Client Component.
-- Do not use `fetch`, XHR, a client-side router, or a framework link that can prefetch the sign-in route. SIWC must start as a top-level navigation.
-- Never request the AuthAPI authorization endpoint directly. The dispatch-owned `/signin-with-chatgpt` route must start the SIWC flow.
-- Use `chatGPTSignOutPath(returnTo)` for browser sign-out links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because they depend on per-request identity headers.
+Run the multiplayer server:
 
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the OAuth cookies, and identity header injection. Do not implement app routes for those reserved paths. Routes that do not import and call the helper remain anonymous-compatible.
+```bash
+CLIENT_ORIGIN=http://localhost:3000 npm start
+```
 
-SIWC establishes identity only; it does not prove workspace membership. Use the Sites hosting platform's access policy controls for workspace-wide restrictions, or enforce explicit server-side membership or allowlist checks.
+The server listens on `PORT` when provided and exposes `/health`. `CLIENT_ORIGIN` accepts a comma-separated list of allowed browser origins. `TURN_DURATION_MS` defaults to `60000` and can be shortened only for automated tests.
 
-Use SIWC for account pages, user-specific dashboards, saved records, and write actions tied to the current ChatGPT user. Leave public content anonymous.
+Important project files:
 
-## Diagnostic Commands
+- `app/page.tsx` — game interface and match interaction logic
+- `app/globals.css` — responsive layouts, effects, and selectable themes
+- `lib/card-data.ts` — character and Battle Card registry
+- `lib/combat-engine.mjs` — reusable and tested combat rules
+- `server.mjs` — private rooms, phase gating, live events, turn timers, and forfeits
+- `tests/` — engine, roster, ability, and multiplayer integration tests
 
-- `npm run install:ci`: perform the one bounded lockfile install
-- `npm run dev`: start the Vite/Vinext development server
-- `npm run build`: build the deployable Sites artifact
-- `npm run start`: start the built Vinext application
-- `npm test`: build and verify the rendered development-preview metadata
-- `npm run db:generate`: generate Drizzle migrations after schema changes
+## Deployment
 
-Use build commands for targeted diagnosis after a remote failure, not as part of the normal checkpoint path.
+Pushing the production branch updates the GitHub Pages client and triggers Render to rebuild the Node server from the same repository. Render should use:
 
-The timeout defaults can be overridden for a controlled canary with `SITES_INSTALL_TIMEOUT`, `SITES_INSTALL_KILL_AFTER`, `SITES_BUILD_TIMEOUT`, and `SITES_BUILD_KILL_AFTER`. A timeout fails the command; the helpers never retry an unchanged install or build.
+- Runtime: Node
+- Build command: `npm install`
+- Start command: `npm start`
+- Health check: `/health`
+- `CLIENT_ORIGIN=https://pugtimusprime.github.io`
 
-## Learn More
-
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+The server is intentionally authoritative for room readiness, deck and deployment gates, attack-turn order, the one-minute timer, Reposition Phase entry, and forfeits. Combat results are sent immediately to the opponent so both boards remain synchronized.
