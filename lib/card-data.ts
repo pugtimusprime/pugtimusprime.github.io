@@ -1,6 +1,6 @@
 export type Faction = "Autobot" | "Decepticon" | "Predacon" | "Maximal";
 export type Role = "Commander" | "Scout" | "Trooper" | "Tactician";
-export type Unit = { id:string; name:string; faction:Faction; role:Role; max:number; hp:number; dmg:number; ability:string; image:string; abilityUses:number; canAttack:boolean; shield?:number; poison?:number; diveBonus?:boolean; };
+export type Unit = { id:string; name:string; faction:Faction; role:Role; max:number; hp:number; dmg:number; ability:string; image:string; abilityUses:number; canAttack:boolean; shield?:number; poison?:number; diveBonus?:boolean; frenzyBonus?:boolean; ravageGuard?:boolean; timedShield?:boolean; shieldUntil?:number; copiedCommanderId?:string; };
 export type Slot = Unit | null;
 export type BattleInfo = { rarity:"Common"|"Rare"; effect:string; image:string };
 
@@ -17,6 +17,10 @@ const rows: Record<Faction, [string,string,Role,number,number,string,number][]> 
     ["wheeljack","Wheeljack","Tactician",50,15,"All deployed Scouts gain +5 Damage on their next attack. 1 use.",1],
     ["elita","Elita-1","Commander",100,15,"A full Autobot team disables enemy Commander abilities until 2 Autobots die.",0],
     ["brawn","Brawn","Scout",50,10,"If killed by a Decepticon, the opponent scraps 2 Battle Cards. 1 use.",1],
+    ["getaway","Getaway","Trooper",80,20,"Select a deployed friendly Commander's ability and copy it. 1 use.",1],
+    ["grapple","Grapple","Tactician",50,15,"Draw one Battle Card for every Autobot in your Backups. 1 use.",1],
+    ["highbrow","Highbrow","Tactician",50,15,"Enemy Tactician abilities are unusable for 3 rounds. 1 use.",1],
+    ["hoist","Hoist","Tactician",70,10,"Replace every Battle Card in your hand with a random one. 1 use.",1],
   ],
   Decepticon:[
     ["megatron","Megatron","Commander",80,20,"Every Autobot Megatron defeats lets him heal any Decepticon by 10.",0],
@@ -31,6 +35,13 @@ const rows: Record<Faction, [string,string,Role,number,number,string,number][]> 
     ["skywarp","Skywarp","Trooper",60,25,"When repositioning, freely move Skywarp to any spot. 2 uses.",2],
     ["fangry","Fangry","Scout",40,5,"Upon death, secretly remain with 20 Health but lose the ability to attack.",1],
     ["kickback","Kickback","Scout",50,10,"If attacked by a Trooper, heal any deployed character by 10. 1 use.",1],
+    ["bludgeon","Bludgeon","Scout",60,5,"Select 3 spaces to hide from detection for 2 rounds, including characters inside them. 1 use.",1],
+    ["frenzy","Frenzy","Scout",40,5,"While Rumble is deployed, Frenzy's Health becomes 60.",0],
+    ["galvatron","Galvatron","Commander",80,20,"While in Backup, give 2 deployed characters a shield for 2 rounds. 1 use.",1],
+    ["jhiaxus","Jhiaxus","Tactician",70,10,"Force the opponent to reveal all characters in their Backups. 1 use.",1],
+    ["laserbeak","Laserbeak","Scout",40,5,"While deployed, Megatron and Soundwave cannot be detected.",0],
+    ["ravage","Ravage","Scout",50,10,"After repositioning, the first enemy attack that hits Ravage is blocked.",0],
+    ["rumble","Rumble","Scout",50,10,"If Frenzy is deployed, draw 1 Battle Card. 1 use.",1],
   ],
   Predacon:[
     ["razor","Razorclaw","Commander",80,20,"Combine with one Backup: gain its Health and scrap it. 1 use.",1],
@@ -72,5 +83,6 @@ export const battleCards:Record<string,BattleInfo>={
 export const battleDeck=Object.keys(battleCards);
 export const shuffled=<T,>(items:T[])=>[...items].sort(()=>Math.random()-.5);
 export const makeBattleDeck=()=>{const cards=battleDeck.flatMap(name=>[name,name]);cards.splice(cards.indexOf("Ambush Trap"),1);cards.splice(cards.indexOf("Surprise"),1);return shuffled(cards)};
-export const enemyDeck=(faction:Faction)=>{const base=rosters[faction].map(x=>({...x}));while(base.length<9)base.push(...rosters.Autobot.slice(0,9-base.length).map(x=>({...x})));return base.slice(0,9)};
+export const starterDeck=(faction:Faction)=>{const limits:Record<Role,number>={Commander:2,Scout:3,Trooper:2,Tactician:2};return (Object.entries(limits) as [Role,number][]).flatMap(([role,amount])=>rosters[faction].filter(unit=>unit.role===role).slice(0,amount).map(unit=>({...unit})))};
+export const enemyDeck=(faction:Faction)=>{const limits:Record<Role,number>={Commander:2,Scout:3,Trooper:2,Tactician:2};return (Object.entries(limits) as [Role,number][]).flatMap(([role,amount])=>shuffled(rosters[faction].filter(unit=>unit.role===role)).slice(0,amount).map(unit=>({...unit})))};
 export const randomEnemyDeck=()=>{const limits:Record<Role,number>={Commander:2,Scout:3,Trooper:2,Tactician:2};return (Object.entries(limits) as [Role,number][]).flatMap(([role,amount])=>shuffled(allUnits.filter(unit=>unit.role===role)).slice(0,amount).map(unit=>({...unit,hp:unit.max,shield:unit.id==="terror"?1:0})))};

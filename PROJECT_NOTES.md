@@ -12,3 +12,4 @@ Theme history:
 - Multiplayer-lobby update: Chromedome Circuit, a mint-and-blue technical grid theme with dark mechanical surfaces.
 - Live-turn update: Space Bridge Transit, a violet portal-ring theme with cyan transit energy and luminous dimensional surfaces.
 - Deck-sync and modal update: Soundwave Signal, a navy communications-console theme with magenta signal bars, blue channel lighting and cassette-deck framing.
+- Character-roster update: Velocitron Raceway, a dark asphalt-and-steel racing theme with neon-lime lane energy, orange speed accents and diagonal track markings.

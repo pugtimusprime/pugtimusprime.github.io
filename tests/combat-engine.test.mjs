@@ -37,6 +37,24 @@ test("Terrorsaur's shield fully blocks the first attack and is then spent", () =
   assert.equal(result.blocked, true);
 });
 
+test("Ravage blocks the first hit after repositioning without losing Health", () => {
+  const result = applyAttackDamage({ ...unit("Scout", 50, "Ravage"), ravageGuard:true }, 30);
+  assert.equal(result.damage, 0);
+  assert.equal(result.unit.hp, 50);
+  assert.equal(result.unit.ravageGuard, false);
+  assert.equal(result.blocked, true);
+});
+
+test("Galvatron's timed shield blocks one hit without spending the target ability", () => {
+  const result = applyAttackDamage({ ...unit("Scout", 50, "Shielded"), shield:1, timedShield:true, shieldUntil:2, abilityUses:1 }, 30);
+  assert.equal(result.damage, 0);
+  assert.equal(result.unit.hp, 50);
+  assert.equal(result.unit.shield, 0);
+  assert.equal(result.unit.timedShield, false);
+  assert.equal(result.unit.abilityUses, 1);
+  assert.equal(result.blocked, true);
+});
+
 test("combat cannot end until all three actions are complete", () => {
   assert.equal(canEndCombat(1), false);
   assert.equal(canEndCombat(0), true);
