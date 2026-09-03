@@ -40,7 +40,7 @@ io.on("connection", (socket) => {
     if (code.length < 3) return reply({ ok: false, error: "Room code needs at least 3 characters." });
     detach(socket);
     let room = rooms.get(code);
-    if (!room) { room = { code, players: new Map(), started: false }; rooms.set(code, room); }
+    if (!room) { room = { code, players: new Map(), started: false, decks: new Map(), deployments: new Map(), turns: new Set(), repositions: new Set() }; rooms.set(code, room); }
     if (room.players.size >= 2) return reply({ ok: false, error: "That room already has two players." });
     room.players.set(socket.id, { id: socket.id, name, ready: false });
     socket.join(code); socket.data.roomCode = code;
@@ -53,6 +53,40 @@ io.on("connection", (socket) => {
     if (room.players.size === 2 && [...room.players.values()].every((entry) => entry.ready)) {
       room.started = true; announce(room); io.to(room.code).emit("match-ready", { room: publicRoom(room) });
     }
+  });
+  socket.on("submit-deck", (deck) => {
+    const room = rooms.get(socket.data.roomCode);
+    if (!room || !Array.isArray(deck) || deck.length !== 9) return;
+    room.decks.set(socket.id, deck);
+    if (room.decks.size === 2) {
+      for (const [id] of room.players) {
+        const opponent = [...room.decks.entries()].find(([other]) => other !== id)?.[1];
+        io.to(id).emit("decks-ready", { opponent });
+      }
+    } else io.to(room.code).emit("match-status", "Opponent is still building their deck.");
+  });
+  socket.on("submit-deployment", (deployment) => {
+    const room = rooms.get(socket.data.roomCode);
+    if (!room || !deployment || !Array.isArray(deployment.board) || !Array.isArray(deployment.backups)) return;
+    room.deployments.set(socket.id, deployment);
+    if (room.deployments.size === 2) {
+      for (const [id] of room.players) {
+        const opponent = [...room.deployments.entries()].find(([other]) => other !== id)?.[1];
+        io.to(id).emit("deployments-ready", { opponent });
+      }
+    } else io.to(room.code).emit("match-status", "Opponent is still choosing their starting six.");
+  });
+  socket.on("finish-turn", () => {
+    const room = rooms.get(socket.data.roomCode); if (!room) return;
+    room.turns.add(socket.id);
+    if (room.turns.size === 2) { room.turns.clear(); io.to(room.code).emit("turns-ready"); }
+    else io.to(room.code).emit("match-status", "Opponent is still taking their turn.");
+  });
+  socket.on("finish-reposition", () => {
+    const room = rooms.get(socket.data.roomCode); if (!room) return;
+    room.repositions.add(socket.id);
+    if (room.repositions.size === 2) { room.repositions.clear(); io.to(room.code).emit("repositions-ready"); }
+    else io.to(room.code).emit("match-status", "Opponent is still repositioning.");
   });
   socket.on("leave-room", () => detach(socket));
   socket.on("disconnect", () => detach(socket));
