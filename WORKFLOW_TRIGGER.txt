@@ -1,1 +1,1 @@
-Trigger automated combat fixes.
+Trigger final combat fixes.
