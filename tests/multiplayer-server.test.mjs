@@ -6,6 +6,22 @@ import { io } from "socket.io-client";
 const port = 3197;
 const origin = "https://pugtimusprime.github.io";
 
+function waitForServer(server) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Timed out starting multiplayer server")), 15000);
+    server.stdout.setEncoding("utf8");
+    server.stdout.on("data", (chunk) => {
+      if (!chunk.includes("multiplayer server listening")) return;
+      clearTimeout(timer);
+      resolve();
+    });
+    server.once("error", (error) => { clearTimeout(timer); reject(error); });
+    server.once("exit", (code) => {
+      if (code) { clearTimeout(timer); reject(new Error(`Multiplayer server exited with code ${code}`)); }
+    });
+  });
+}
+
 function once(socket, event) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`Timed out waiting for ${event}`)), 5000);
@@ -14,8 +30,8 @@ function once(socket, event) {
 }
 
 test("multiplayer rounds gate turns and repositioning", async () => {
-  const server = spawn(process.execPath, ["server.mjs"], { env: { ...process.env, PORT: String(port), CLIENT_ORIGIN: origin }, stdio: "ignore" });
-  await new Promise(resolve => setTimeout(resolve, 400));
+  const server = spawn(process.execPath, ["server.mjs"], { env: { ...process.env, PORT: String(port), CLIENT_ORIGIN: origin }, stdio: ["ignore", "pipe", "pipe"] });
+  await waitForServer(server);
   const a = io(`http://127.0.0.1:${port}`, { extraHeaders: { Origin: origin }, reconnection: false });
   const b = io(`http://127.0.0.1:${port}`, { extraHeaders: { Origin: origin }, reconnection: false });
   try {
@@ -26,9 +42,15 @@ test("multiplayer rounds gate turns and repositioning", async () => {
     ]);
     const matchA = once(a, "match-ready"), matchB = once(b, "match-ready");
     a.emit("set-ready", true); b.emit("set-ready", true); await Promise.all([matchA, matchB]);
+    const rejected = await new Promise(resolve => a.emit("submit-deck", ["duplicate","duplicate"], resolve));
+    assert.equal(rejected.ok, false);
+    assert.match(rejected.error, /exactly nine/i);
     const decksA = once(a, "decks-ready"), decksB = once(b, "decks-ready");
-    a.emit("submit-deck", ["a1","a2","a3","a4","a5","a6","a7","a8","a9"]);
-    b.emit("submit-deck", ["b1","b2","b3","b4","b5","b6","b7","b8","b9"]);
+    const acknowledgementA = new Promise(resolve => a.emit("submit-deck", ["a1","a2","a3","a4","a5","a6","a7","a8","a9"], resolve));
+    const acknowledgementB = new Promise(resolve => b.emit("submit-deck", ["b1","b2","b3","b4","b5","b6","b7","b8","b9"], resolve));
+    const acknowledgements = await Promise.all([acknowledgementA, acknowledgementB]);
+    assert.ok(acknowledgements.every(result => result.ok));
+    assert.deepEqual(acknowledgements.map(result => result.waiting).sort(), [false, true]);
     await Promise.all([decksA, decksB]);
     const deployA = once(a, "deployments-ready"), deployB = once(b, "deployments-ready");
     const turnA = once(a, "turn-state"), turnB = once(b, "turn-state");
