@@ -47,6 +47,10 @@ import {
   hiddenAttackMessage,
   isBattleCardImmune,
   isPredaconAbilityImmune,
+  isFullFactionTeam,
+  hasTarantulasDraw,
+  healFaction,
+  healTransmetalTarantulas,
   reposition,
   resolveTrap,
   reviveAtHalf,
@@ -144,6 +148,7 @@ type OnlineCombatAction = (
   | { kind: "tactician-lock"; untilRound: number }
   | { kind: "conceal-spaces"; spaces: number[]; untilRound: number }
   | { kind: "timed-shields"; positions: number[]; untilRound: number }
+  | { kind: "team-heal"; faction: Faction; amount: number }
 ) & { actorName: string };
 type DeckSubmitResponse = { ok: boolean; waiting?: boolean; error?: string };
 
@@ -169,6 +174,7 @@ const themes = [
   ["metroplex", "Metroplex Grid"],
   ["vectorsigma", "Vector Sigma Vault"],
   ["teletraan", "Teletraan Archive"],
+  ["darksyde", "Darksyde Reactor"],
 ] as const;
 const cardBorders = [
   ["energon-edge", "Energon Edge"],
@@ -177,6 +183,7 @@ const cardBorders = [
   ["beast-claw", "Beast Wars Claw"],
   ["cybertron-neon", "Cybertron Neon"],
   ["plasma-rivet", "Plasma Rivet"],
+  ["stasis-chrome", "Stasis Chrome"],
 ] as const;
 const activeAbilities = new Set([
   "eject",
@@ -199,6 +206,7 @@ const activeAbilities = new Set([
   "rumble",
   "rattrap",
   "rhinox",
+  "cyclonus",
 ]);
 const targetAbility = new Set([
   "eject",
@@ -907,9 +915,11 @@ export default function Home() {
   const lastOnlineRound = useRef(0),
     deckAdvancedRef = useRef(false);
   const boardRef = useRef(board),
-    backupsRef = useRef(backups);
+    backupsRef = useRef(backups),
+    enemyBoardRef = useRef(enemyBoard);
   boardRef.current = board;
   backupsRef.current = backups;
+  enemyBoardRef.current = enemyBoard;
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("hidden-front-theme", theme);
@@ -1020,9 +1030,15 @@ export default function Home() {
         setRepositionLocked(false);
         if (data.round > 1)
           setDrawPile((pile) => {
-            const card = pile[0];
-            if (card) setBattleHand((hand) => [...hand, card]);
-            return card ? pile.slice(1) : pile;
+            const amount = hasTarantulasDraw(
+              boardRef.current,
+              enemyBoardRef.current,
+            )
+              ? 2
+              : 1;
+            const cards = pile.slice(0, amount);
+            if (cards.length) setBattleHand((hand) => [...hand, ...cards]);
+            return pile.slice(cards.length);
           });
       }
       setIsMyTurn(data.yourTurn);
@@ -1041,6 +1057,19 @@ export default function Home() {
       );
     };
     const combat = (data: OnlineCombatAction) => {
+      if (data.kind === "team-heal") {
+        setEnemyBoard((current) =>
+          healFaction(current, data.faction, data.amount),
+        );
+        setEnemyBackups((current) =>
+          healFaction(current, data.faction, data.amount),
+        );
+        flash(
+          `${data.actorName}'s Cyclonus healed every enemy Decepticon by ${data.amount}.`,
+          "info",
+        );
+        return;
+      }
       if (data.kind === "tactician-lock") {
         setTacticianDisabledUntil(data.untilRound);
         flash(
@@ -1140,11 +1169,13 @@ export default function Home() {
       setBoard((current) => {
         if (data.defeated && shouldLayDepthchargeMine(current, data.defeated))
           setFriendlyMines([data.target]);
-        const next = applyBoardAuras(
+        let next = applyBoardAuras(
           current.map((unit, index) =>
             index === data.target ? data.result : unit,
           ),
         );
+        if (data.defeated)
+          next = applyBoardAuras(healTransmetalTarantulas(next, data.defeated));
         if (next.filter(Boolean).length + backupsRef.current.length === 0) {
           setWinner("Defeat — every character on your team has been defeated.");
           setPhase("over");
@@ -1157,6 +1188,8 @@ export default function Home() {
             ? cards
             : [...cards, data.defeated!],
         );
+      if (data.defeated)
+        setBackups((cards) => healTransmetalTarantulas(cards, data.defeated));
       flash(
         data.defeated
           ? `${data.actorName} defeated ${data.defeated.name} at position ${data.target + 1}.`
@@ -1250,6 +1283,10 @@ export default function Home() {
       Math.max(0, 6 - board.filter(Boolean).length),
       backups.length,
     );
+  const classRequirements =
+    deck.includes("barrage") && count("Commander") === 3
+      ? { Commander: 3, Scout: 2, Trooper: 2, Tactician: 2 }
+      : { Commander: 2, Scout: 3, Trooper: 2, Tactician: 2 };
   const flash = (text: string, tone: Feedback["tone"] = "info") => {
     setFeedback({ text, tone, key: Date.now() });
     setLog((v) => [text, ...v]);
@@ -1326,8 +1363,11 @@ export default function Home() {
         round <= enemyConcealment.until &&
         enemyConcealment.spaces.includes(index),
       laserbeakActive = enemyBoard.some((card) => card?.id === "laserbeak");
+    const lioConvoyProtected =
+      unit.id === "lio-convoy" && isFullFactionTeam(enemyRoster, "Maximal");
     return (
       unit.id === "wheelie" ||
+      lioConvoyProtected ||
       bludgeonHidden ||
       (laserbeakActive &&
         (unit.id === "megatron" || unit.id === "soundwave")) ||
@@ -1491,8 +1531,9 @@ export default function Home() {
     setHand([]);
     setBoard(deployed);
     setEnemyBoard((v) => applyBoardAuras(v));
-    setBattleHand(pile.slice(0, 1));
-    setDrawPile(pile.slice(1));
+    const openingDraw = hasTarantulasDraw(deployed, enemyBoard) ? 2 : 1;
+    setBattleHand(pile.slice(0, openingDraw));
+    setDrawPile(pile.slice(openingDraw));
     setActions(3);
     setBattlePlayed(false);
     setUsedAttacks([]);
@@ -1511,7 +1552,7 @@ export default function Home() {
     }
     setPhase("combat");
     flash(
-      "Round 1. Your three unplaced characters became Backups; the Battle Card window is open.",
+      `Round 1. Your three unplaced characters became Backups; ${openingDraw} Battle Card${openingDraw === 1 ? "" : "s"} drawn and the Battle Card window is open.`,
       "good",
     );
   }
@@ -1576,8 +1617,14 @@ export default function Home() {
       );
     }
     setEnemyScrap((v) => [...v, unit]);
+    setEnemyBackups((cards) => healTransmetalTarantulas(cards, unit));
     setEnemyDefeatPending(true);
     next[index] = null;
+    next.splice(
+      0,
+      next.length,
+      ...applyBoardAuras(healTransmetalTarantulas(next, unit)),
+    );
     flash(
       `Enemy defeated at position ${index + 1}: ${unit.name} revealed.`,
       "good",
@@ -1898,6 +1945,15 @@ export default function Home() {
       setInteraction({ kind: "rhinox", actor: index });
       flash("Choose a defeated Maximal to revive at half Health.");
       return;
+    } else if (key === "cyclonus") {
+      setBoard((current) => healFaction(current, "Decepticon", 5));
+      setBackups((current) => healFaction(current, "Decepticon", 5));
+      multiplayerSocket?.emit("combat-action", {
+        kind: "team-heal",
+        faction: "Decepticon",
+        amount: 5,
+      });
+      flash("Cyclonus healed every Decepticon on your team by 5.", "good");
     }
     setBoard((v) =>
       v.map((x, i) =>
@@ -2725,6 +2781,8 @@ export default function Home() {
       if (target.id === "cheetor")
         setPermanentRevealedIds((ids) => [...new Set([...ids, attacker.id])]);
       pb[targetIndex] = null;
+      pb = healTransmetalTarantulas(pb, target);
+      setBackups((cards) => healTransmetalTarantulas(cards, target));
       setScrap((v) => [...v, target]);
       flash(`${target.name} was defeated by an unknown enemy attack.`, "bad");
       if (target.id === "sun")
@@ -2975,10 +3033,11 @@ export default function Home() {
     setUsedAbilities([]);
     setRoundDamage(false);
     setRevealed([]);
-    drawCards(1);
+    drawCards(hasTarantulasDraw(board, eb) ? 2 : 1);
     setPhase("combat");
+    const cardsDrawn = hasTarantulasDraw(board, eb) ? 2 : 1;
     flash(
-      `Round ${newRound}. One Battle Card drawn; start-of-round window open.`,
+      `Round ${newRound}. ${cardsDrawn} Battle Card${cardsDrawn === 1 ? "" : "s"} drawn; start-of-round window open.`,
       "good",
     );
   }
@@ -3144,12 +3203,7 @@ export default function Home() {
             <b className="pool-count">{classFilterPool.length}</b>
             <small>{deck.length}/9 selected</small>
           </button>
-          {Object.entries({
-            Commander: 2,
-            Scout: 3,
-            Trooper: 2,
-            Tactician: 2,
-          }).map(([role, need]) => (
+          {Object.entries(classRequirements).map(([role, need]) => (
             <button
               disabled={deckLocked}
               key={role}

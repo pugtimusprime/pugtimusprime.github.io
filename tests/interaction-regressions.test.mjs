@@ -69,6 +69,13 @@ test("modal close controls are half-height and the update adds customization", (
   assert.match(css, /data-card-border="plasma-rivet"/);
 });
 
+test("the six-character update adds its theme and Character Card border", () => {
+  assert.match(page, /\["darksyde", "Darksyde Reactor"\]/);
+  assert.match(page, /\["stasis-chrome", "Stasis Chrome"\]/);
+  assert.match(css, /html\[data-theme="darksyde"\]/);
+  assert.match(css, /data-card-border="stasis-chrome"/);
+});
+
 test("combat history is unlimited while its badge caps at 99+", () => {
   assert.doesNotMatch(page, /\.slice\(0,100\)/);
   assert.match(page, /log\.length > 99 \? "99\+" : log\.length/);
