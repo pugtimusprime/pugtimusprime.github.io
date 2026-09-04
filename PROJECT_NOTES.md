@@ -16,3 +16,4 @@ Theme history:
 - Maximal-expansion update: Axalon Dawn, a warm ivory-and-jungle-teal exploration-console theme with coral sunrise accents, topographic rings and brushed-alloy surfaces.
 - Reposition-timer update: Axalon Dawn was softened into a low-glare deep-jungle night palette, and Earth Command Bunker was added as an olive field-console theme with amber CRT lighting, riveted panels and map-grid atmosphere.
 - Deck-filter count update: Omega Sentinel, a cold white-and-gunmetal defence-station theme with emergency-red accents, blue scanner light and reinforced panel surfaces.
+- Settings and modal update: Nemesis Flight Deck, a black-and-purple warship interior theme with green status lighting, diagonal deck markings and heavy shadowed panels.
