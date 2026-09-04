@@ -168,6 +168,7 @@ const themes = [
   ["nemesis", "Nemesis Flight Deck"],
   ["metroplex", "Metroplex Grid"],
   ["vectorsigma", "Vector Sigma Vault"],
+  ["teletraan", "Teletraan Archive"],
 ] as const;
 const cardBorders = [
   ["energon-edge", "Energon Edge"],
@@ -175,6 +176,7 @@ const cardBorders = [
   ["decepticon-alloy", "Decepticon Alloy"],
   ["beast-claw", "Beast Wars Claw"],
   ["cybertron-neon", "Cybertron Neon"],
+  ["plasma-rivet", "Plasma Rivet"],
 ] as const;
 const activeAbilities = new Set([
   "eject",

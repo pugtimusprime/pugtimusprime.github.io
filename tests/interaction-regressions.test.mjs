@@ -61,6 +61,14 @@ test("settings saves five Character Card borders and the new update theme", () =
     assert.match(css, new RegExp(`data-card-border="${id}"`));
 });
 
+test("modal close controls are half-height and the update adds customization", () => {
+  assert.match(css, /dialog-close[^}]*height:16px!important/);
+  assert.match(page, /\["teletraan", "Teletraan Archive"\]/);
+  assert.match(page, /\["plasma-rivet", "Plasma Rivet"\]/);
+  assert.match(css, /html\[data-theme="teletraan"\]/);
+  assert.match(css, /data-card-border="plasma-rivet"/);
+});
+
 test("combat history is unlimited while its badge caps at 99+", () => {
   assert.doesNotMatch(page, /\.slice\(0,100\)/);
   assert.match(page, /log\.length > 99 \? "99\+" : log\.length/);
