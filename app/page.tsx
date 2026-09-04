@@ -102,8 +102,7 @@ type Interaction = {
 } | null;
 type Feedback = { text: string; tone: "good" | "bad" | "info"; key: number };
 type CardInspection =
-  | Unit
-  | { name: string; image: string; effect: string; rarity: string };
+  Unit | { name: string; image: string; effect: string; rarity: string };
 type Concealment = { spaces: number[]; until: number } | null;
 type OnlineDeployment = { board: (Unit | null)[]; backups: Unit[] };
 type OnlineTurn = {
@@ -168,6 +167,14 @@ const themes = [
   ["omega", "Omega Sentinel"],
   ["nemesis", "Nemesis Flight Deck"],
   ["metroplex", "Metroplex Grid"],
+  ["vectorsigma", "Vector Sigma Vault"],
+] as const;
+const cardBorders = [
+  ["energon-edge", "Energon Edge"],
+  ["matrix-relic", "Matrix Relic"],
+  ["decepticon-alloy", "Decepticon Alloy"],
+  ["beast-claw", "Beast Wars Claw"],
+  ["cybertron-neon", "Cybertron Neon"],
 ] as const;
 const activeAbilities = new Set([
   "eject",
@@ -413,7 +420,7 @@ function EnemyRosterCards({
       {units.map((unit) => (
         <figure
           key={unit.id}
-          className={dead.has(unit.id) ? "enemy-card-dead" : ""}
+          className={`character-border-frame ${dead.has(unit.id) ? "enemy-card-dead" : ""}`}
           onMouseEnter={() => inspect(unit)}
           onMouseLeave={() => inspect(null)}
         >
@@ -468,6 +475,8 @@ function EnemyTeamModal({
 function AppTools({
   theme,
   setTheme,
+  cardBorder,
+  setCardBorder,
   showFilterCounts,
   setShowFilterCounts,
   log,
@@ -476,6 +485,8 @@ function AppTools({
 }: {
   theme: string;
   setTheme: (v: string) => void;
+  cardBorder: string;
+  setCardBorder: (v: string) => void;
   showFilterCounts: boolean;
   setShowFilterCounts: (v: boolean) => void;
   log: string[];
@@ -493,9 +504,26 @@ function AppTools({
         </summary>
         <div className="settings-panel">
           <label className="settings-theme">
-            <span><Palette size={15} /> Theme</span>
+            <span>
+              <Palette size={15} /> Theme
+            </span>
             <select value={theme} onChange={(e) => setTheme(e.target.value)}>
               {themes.map(([id, name]) => (
+                <option key={id} value={id}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="settings-theme">
+            <span>
+              <Sparkles size={15} /> Character Card border
+            </span>
+            <select
+              value={cardBorder}
+              onChange={(e) => setCardBorder(e.target.value)}
+            >
+              {cardBorders.map(([id, name]) => (
                 <option key={id} value={id}>
                   {name}
                 </option>
@@ -568,7 +596,7 @@ function CharacterCard({
     );
   return (
     <div
-      className={`character-card ${small ? "small" : ""} ${used ? "used" : ""}`}
+      className={`character-card character-border-frame ${small ? "small" : ""} ${used ? "used" : ""}`}
       onMouseEnter={() => inspect(unit)}
       onMouseLeave={() => inspect(null)}
     >
@@ -603,7 +631,10 @@ function CardInspector({ unit }: { unit: CardInspection | null }) {
   if (!unit) return null;
   const battle = "effect" in unit;
   return (
-    <aside className="card-inspector" aria-live="polite">
+    <aside
+      className={`card-inspector ${battle ? "battle-inspector" : "character-inspector"}`}
+      aria-live="polite"
+    >
       {unit.image ? (
         <img src={unit.image} alt={unit.name} />
       ) : battle ? (
@@ -807,6 +838,7 @@ export default function Home() {
     [faction, setFaction] = useState<Faction>("Autobot"),
     [enemyFaction, setEnemyFaction] = useState<EnemyChoice>("Predacon"),
     [theme, setTheme] = useState("cybertron"),
+    [cardBorder, setCardBorder] = useState("energon-edge"),
     [showFilterCounts, setShowFilterCounts] = useState(true);
   const [deck, setDeck] = useState<string[]>(
       starterDeck("Autobot").map((x) => x.id),
@@ -883,6 +915,9 @@ export default function Home() {
   useEffect(() => {
     const saved = localStorage.getItem("hidden-front-theme");
     if (saved && themes.some(([id]) => id === saved)) setTheme(saved);
+    const savedBorder = localStorage.getItem("hidden-front-card-border");
+    if (savedBorder && cardBorders.some(([id]) => id === savedBorder))
+      setCardBorder(savedBorder);
     const savedCounts = localStorage.getItem("hidden-front-filter-counts");
     if (savedCounts !== null) setShowFilterCounts(savedCounts === "true");
   }, []);
@@ -892,6 +927,9 @@ export default function Home() {
       String(showFilterCounts),
     );
   }, [showFilterCounts]);
+  useEffect(() => {
+    localStorage.setItem("hidden-front-card-border", cardBorder);
+  }, [cardBorder]);
   useEffect(() => {
     if (!turnEndsAt || !["combat", "reinforce", "reposition"].includes(phase))
       return;
@@ -2965,11 +3003,17 @@ export default function Home() {
     .filter((index) => index >= 0);
   const shell = (children: React.ReactNode) => (
     <CardInspectContext.Provider value={setInspectedUnit}>
-      <main className={`app-shell ${showFilterCounts ? "" : "hide-filter-counts"}`} data-theme={theme}>
+      <main
+        className={`app-shell ${showFilterCounts ? "" : "hide-filter-counts"}`}
+        data-theme={theme}
+        data-card-border={cardBorder}
+      >
         <div className="utility-row">
           <AppTools
             theme={theme}
             setTheme={setTheme}
+            cardBorder={cardBorder}
+            setCardBorder={setCardBorder}
             showFilterCounts={showFilterCounts}
             setShowFilterCounts={setShowFilterCounts}
             log={log}
@@ -3155,7 +3199,7 @@ export default function Home() {
               <button
                 disabled={deckLocked}
                 key={u.id}
-                className={`deck-card ${on ? "chosen" : ""}`}
+                className={`deck-card character-border-frame ${on ? "chosen" : ""}`}
                 onMouseEnter={() => setInspectedUnit(u)}
                 onMouseLeave={() => setInspectedUnit(null)}
                 onClick={() =>
