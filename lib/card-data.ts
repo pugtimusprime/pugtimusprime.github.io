@@ -35,7 +35,7 @@ const rows: Record<Faction, [string,string,Role,number,number,string,number][]> 
     ["skywarp","Skywarp","Trooper",60,25,"When repositioning, freely move Skywarp to any spot. 2 uses.",2],
     ["fangry","Fangry","Scout",40,5,"Upon death, secretly remain with 20 Health but lose the ability to attack.",1],
     ["kickback","Kickback","Scout",50,10,"If attacked by a Trooper, heal any deployed character by 10. 1 use.",1],
-    ["bludgeon","Bludgeon","Scout",60,5,"Select 3 spaces to hide from detection for 2 rounds, including characters inside them. 1 use.",1],
+    ["bludgeon","Bludgeon","Trooper",60,5,"Select 3 spaces to hide from detection for 2 rounds, including characters inside them. 1 use.",1],
     ["frenzy","Frenzy","Scout",40,5,"While Rumble is deployed, Frenzy's Health becomes 60.",0],
     ["galvatron","Galvatron","Commander",80,20,"While in Backup, give 2 deployed characters a shield for 2 rounds. 1 use.",1],
     ["jhiaxus","Jhiaxus","Tactician",70,10,"Force the opponent to reveal all characters in their Backups. 1 use.",1],

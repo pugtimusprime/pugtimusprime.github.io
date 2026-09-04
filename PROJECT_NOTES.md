@@ -15,3 +15,4 @@ Theme history:
 - Character-roster update: Velocitron Raceway, a dark asphalt-and-steel racing theme with neon-lime lane energy, orange speed accents and diagonal track markings.
 - Maximal-expansion update: Axalon Dawn, a warm ivory-and-jungle-teal exploration-console theme with coral sunrise accents, topographic rings and brushed-alloy surfaces.
 - Reposition-timer update: Axalon Dawn was softened into a low-glare deep-jungle night palette, and Earth Command Bunker was added as an olive field-console theme with amber CRT lighting, riveted panels and map-grid atmosphere.
+- Deck-filter count update: Omega Sentinel, a cold white-and-gunmetal defence-station theme with emergency-red accents, blue scanner light and reinforced panel surfaces.

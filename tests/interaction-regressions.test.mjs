@@ -12,6 +12,18 @@ test("card details are hover-driven without the redundant deck preview", () => {
   assert.match(page, /onMouseLeave=\{\(\)=>setInspectedUnit\(null\)\}/);
 });
 
+test("deck filters show total pool, class, faction and visible-result counts", () => {
+  assert.match(page, /poolRoleCount/);
+  assert.match(page, /poolFactionCount/);
+  assert.match(page, /CHARACTERS TOTAL/);
+  assert.match(page, /Showing <b>\{filtered\.length\}<\/b> of <b>\{allUnits\.length\}<\/b> characters/);
+});
+
+test("Omega Sentinel remains available as the update theme", () => {
+  assert.match(page, /\["omega","Omega Sentinel"\]/);
+  assert.match(css, /html\[data-theme="omega"\]/);
+});
+
 test("combat history is unlimited while its badge caps at 99+", () => {
   assert.doesNotMatch(page, /\.slice\(0,100\)/);
   assert.match(page, /log\.length>99\?"99\+":log\.length/);

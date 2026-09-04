@@ -8,7 +8,7 @@ const expected = {
   grapple:["Grapple","Autobot","Tactician",50,15],
   highbrow:["Highbrow","Autobot","Tactician",50,15],
   hoist:["Hoist","Autobot","Tactician",70,10],
-  bludgeon:["Bludgeon","Decepticon","Scout",60,5],
+  bludgeon:["Bludgeon","Decepticon","Trooper",60,5],
   frenzy:["Frenzy","Decepticon","Scout",40,5],
   galvatron:["Galvatron","Decepticon","Commander",80,20],
   jhiaxus:["Jhiaxus","Decepticon","Tactician",70,10],
@@ -41,6 +41,11 @@ test("the expanded faction totals stay correct", () => {
   assert.equal(rosters.Autobot.length, 15);
   assert.equal(rosters.Decepticon.length, 19);
   assert.equal(rosters.Maximal.length, 11);
+});
+
+test("Bludgeon is registered as a Trooper", () => {
+  const bludgeon = allUnits.find(card => card.id === "bludgeon");
+  assert.equal(bludgeon?.role, "Trooper");
 });
 
 test("expanded faction starter decks remain legal nine-card decks", () => {
