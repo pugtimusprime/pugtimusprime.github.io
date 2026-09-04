@@ -129,3 +129,11 @@ html[data-theme="nemesis"] .stage-header,html[data-theme="nemesis"] .rail-panel,
 .battle-card-face b{font-size:.76rem;line-height:1.2;text-transform:uppercase;letter-spacing:.08em}
 .battle-card-face small{font-size:.55rem;color:var(--sub);letter-spacing:.12em}
 .battle-deck-summary figure{cursor:help}
+
+/* Version 15: exact viewport-centred modals and Metroplex Grid */
+html[data-theme="metroplex"]{--bg:#071016;--surface:#101d25;--surface2:#1a2d38;--text:#edf8fc;--sub:#8fabb8;--accent:#33d4c7;--accent2:#e18b31;--danger:#ef5964;--line:#355866;--glow:#33d4c73d;color-scheme:dark}
+html[data-theme="metroplex"] body{background-color:var(--bg);background-image:linear-gradient(#33d4c70c 1px,transparent 1px),linear-gradient(90deg,#33d4c70c 1px,transparent 1px),repeating-linear-gradient(135deg,transparent 0 52px,#e18b3109 53px 55px,transparent 56px 108px);background-size:28px 28px,28px 28px,108px 108px}
+html[data-theme="metroplex"] .stage-header,html[data-theme="metroplex"] .rail-panel,html[data-theme="metroplex"] .start-card,html[data-theme="metroplex"] .builder-head{border-color:#33d4c777;box-shadow:inset 4px 0 0 #e18b31aa,inset -1px 0 0 #33d4c788,0 18px 38px #0009}
+[data-slot="dialog-content"].rules-modal,[data-slot="dialog-content"].log-modal{position:fixed!important;inset:auto!important;top:50dvh!important;left:50dvw!important;right:auto!important;bottom:auto!important;translate:-50% -50%!important;transform:none!important;margin:0!important;box-sizing:border-box!important;max-width:calc(100dvw - 24px)!important;max-height:calc(100dvh - 24px)!important;height:calc(100dvh - 24px)!important}
+[data-slot="dialog-content"].rules-modal{width:min(850px,calc(100dvw - 24px))!important}
+[data-slot="dialog-content"].log-modal{width:min(780px,calc(100dvw - 24px))!important}

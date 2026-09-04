@@ -167,6 +167,7 @@ const themes = [
   ["earthbunker", "Earth Command Bunker"],
   ["omega", "Omega Sentinel"],
   ["nemesis", "Nemesis Flight Deck"],
+  ["metroplex", "Metroplex Grid"],
 ] as const;
 const activeAbilities = new Set([
   "eject",

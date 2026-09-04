@@ -35,7 +35,8 @@ test("combat history is unlimited while its badge caps at 99+", () => {
 });
 
 test("rules and history modals are centered and viewport-height", () => {
-  assert.match(css, /\[data-slot="dialog-content"\]\.rules-modal,\[data-slot="dialog-content"\]\.log-modal\{position:fixed!important;inset:8px!important;[^}]*transform:none!important;[^}]*margin:auto!important;[^}]*height:calc\(100dvh - 16px\)!important/);
+  assert.match(css, /\[data-slot="dialog-content"\]\.rules-modal,\[data-slot="dialog-content"\]\.log-modal\{position:fixed!important;inset:auto!important;top:50dvh!important;left:50dvw!important;[^}]*translate:-50% -50%!important;transform:none!important/);
+  assert.match(page, /\["metroplex", "Metroplex Grid"\]/);
 });
 
 test("the server owns a 30-second reposition deadline", () => {
