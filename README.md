@@ -130,6 +130,22 @@ The production client is hosted on GitHub Pages and the multiplayer server is ho
 
 Render's free service may sleep when inactive. The first connection after a quiet period can take roughly a minute while the server wakes up. Both players should keep the game page open during a match.
 
+## Online co-op Quintesson Raid
+
+Choose **Quintesson Raid** from the main menu and share a Raid room code with
+one friend. This is a separate two-player PvE mode: both players build legal
+nine-character decks, order six deployed characters plus three Backups, and
+fight the same always-visible Quintesson court.
+
+Each round gives the first player two actions and the second player two actions,
+then the server runs the boss turn. Player order reverses for the next round.
+The Bailiff halves damage to the Judge, the Prosecutor marks the lowest-Health
+player character for +10 damage on the next Quintesson strike, the Executor
+deals +10 to characters at half Health or lower, and additional Allicons gain up
+to +10 damage from their pack. The Judge begins at 700 Health and revives a
+defeated named troop at half Health—or summons an Allicon when the court has no
+fallen named troop and fewer than three living troops. Defeat the Judge to win.
+
 ## Development
 
 Requirements:
@@ -164,7 +180,7 @@ Important project files:
 - `app/globals.css` — responsive layouts, effects, and selectable themes
 - `lib/card-data.ts` — character and Battle Card registry
 - `lib/combat-engine.mjs` — reusable and tested combat rules
-- `server.mjs` — private rooms, phase gating, live events, turn timers, and forfeits
+- `server.mjs` — private PvP and Raid rooms, phase gating, boss AI, live events, turn timers, and forfeits
 - `tests/` — engine, roster, ability, and multiplayer integration tests
 
 ## Deployment

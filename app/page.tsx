@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { io, type Socket } from "socket.io-client";
+import Link from "next/link";
 import {
   Bomb,
   BookOpen,
@@ -175,6 +176,7 @@ const themes = [
   ["vectorsigma", "Vector Sigma Vault"],
   ["teletraan", "Teletraan Archive"],
   ["darksyde", "Darksyde Reactor"],
+  ["verdict-engine", "Verdict Engine"],
 ] as const;
 const cardBorders = [
   ["energon-edge", "Energon Edge"],
@@ -184,6 +186,7 @@ const cardBorders = [
   ["cybertron-neon", "Cybertron Neon"],
   ["plasma-rivet", "Plasma Rivet"],
   ["stasis-chrome", "Stasis Chrome"],
+  ["tribunal-shackle", "Tribunal Shackle"],
 ] as const;
 const activeAbilities = new Set([
   "eject",
@@ -371,6 +374,20 @@ function RulesModal() {
               successful hit marks that position as occupied until the round
               ends. The Enemy Team viewer marks defeated characters with a
               skull.
+            </p>
+          </section>
+          <section>
+            <h3>14. Online co-op Quintesson Raid</h3>
+            <p>
+              Raid is a separate two-player PvE mode. Each player brings a
+              legal nine-character deck: six deploy and three remain as
+              Backups. Player 1 takes two actions, Player 2 takes two actions,
+              then the visible Quintesson court takes its boss turn. Player
+              order reverses each round. Defeat the Judge to win; the Raid is
+              lost only when both player teams have no surviving characters.
+              The Bailiff protects the Judge, the Prosecutor marks the weakest
+              target, the Executor punishes wounded characters, and the Judge
+              revives troops or summons Allicons.
             </p>
           </section>
         </div>
@@ -3142,6 +3159,9 @@ export default function Home() {
           <button className="ghost" onClick={() => setPhase("multiplayer")}>
             <Users size={17} /> Multiplayer
           </button>
+          <Link className="ghost raid-entry" href="/raid">
+            <Skull size={17} /> Quintesson Raid
+          </Link>
         </div>
       </section>,
     );
