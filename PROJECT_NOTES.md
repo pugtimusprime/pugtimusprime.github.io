@@ -25,6 +25,8 @@ Character Card border history:
 - Compact-close update: Teletraan Archive, a deep green terminal theme with amber archive lighting, and Plasma Rivet, an orange plasma-welded frame with inset corner fasteners.
 - Six-character expansion: Darksyde Reactor, a purple Predacon engine-room theme with toxic-green reactor light, and Stasis Chrome, a polished silver-blue double frame inspired by Cybertronian stasis pods.
 - Online co-op Raid update: Verdict Engine, a bronze-and-acid tribunal mechanism with rotating court geometry, asymmetrical verdict panels and execution-red signals.
+- Boss Rush board update: Boss Rush Obelisk, a deep-plum courtroom palette with gold obelisk lighting, red verdict signals and concentric tribunal rings.
 - Settings and modal update: Nemesis Flight Deck, a black-and-purple warship interior theme with green status lighting, diagonal deck markings and heavy shadowed panels.
 - Exact modal-centering update: Metroplex Grid, a dark steel city-grid theme with turquoise infrastructure lighting, orange transit accents and squared mechanical surfaces.
 - Online co-op Raid update: Tribunal Shackle, an asymmetrical bronze restraint frame with luminous verdict seals, clamped corners and a heavy mechanical silhouette.
+- Boss Rush board update: Quintesson Seal, a gold-and-oxblood seal frame with radial corner marks and an angular four-point verdict stamp.

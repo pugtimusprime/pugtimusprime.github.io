@@ -177,6 +177,7 @@ const themes = [
   ["teletraan", "Teletraan Archive"],
   ["darksyde", "Darksyde Reactor"],
   ["verdict-engine", "Verdict Engine"],
+  ["boss-rush", "Boss Rush Obelisk"],
 ] as const;
 const cardBorders = [
   ["energon-edge", "Energon Edge"],
@@ -187,6 +188,7 @@ const cardBorders = [
   ["plasma-rivet", "Plasma Rivet"],
   ["stasis-chrome", "Stasis Chrome"],
   ["tribunal-shackle", "Tribunal Shackle"],
+  ["quintesson-seal", "Quintesson Seal"],
 ] as const;
 const activeAbilities = new Set([
   "eject",
@@ -749,7 +751,8 @@ function MultiplayerLobby({
       "Choose a name and room code, then connect.",
     ),
     [players, setPlayers] = useState<RoomPlayer[]>([]),
-    [connected, setConnected] = useState(false);
+    [connected, setConnected] = useState(false),
+    [quickSearching, setQuickSearching] = useState(false);
   const [socket, setSocket] = useState<Socket | null>(null);
   const inRoom = players.length > 0;
   function join() {
@@ -761,6 +764,7 @@ function MultiplayerLobby({
     socket?.disconnect();
     const next = io(url, { transports: ["websocket"] });
     setSocket(next);
+    setQuickSearching(false);
     next.on("connect", () => {
       setConnected(true);
       next.emit(
@@ -790,6 +794,58 @@ function MultiplayerLobby({
     );
     next.on("match-ready", () => onStart(next));
     next.on("disconnect", () => setConnected(false));
+  }
+  function quickMatch() {
+    const url = server.trim().replace(/\/$/, "");
+    if (!url) {
+      setMessage("Add the server address first.");
+      return;
+    }
+    socket?.disconnect();
+    const next = io(url, { transports: ["websocket"] });
+    setSocket(next);
+    setQuickSearching(true);
+    setMessage("Searching for the first available opponent…");
+    next.on("connect", () => {
+      setConnected(true);
+      next.emit(
+        "quick-match",
+        { name },
+        (result: { ok: boolean; waiting?: boolean; error?: string }) => {
+          if (!result.ok) {
+            setQuickSearching(false);
+            setMessage(result.error || "Could not start Quick Match.");
+          }
+        },
+      );
+    });
+    next.on("quick-match-status", (status: string) => setMessage(status));
+    next.on("room-state", (room: { players: RoomPlayer[]; started: boolean }) => {
+      setPlayers(room.players);
+      if (room.players.length === 2) {
+        setQuickSearching(false);
+        setMessage("Opponent found. Both players can ready up.");
+      }
+      if (room.started) setMessage("Both players are ready. Opening deck building…");
+    });
+    next.on("match-ready", () => onStart(next));
+    next.on("connect_error", () => {
+      setQuickSearching(false);
+      setConnected(false);
+      setMessage("Could not reach the server. Check the Render deployment.");
+    });
+    next.on("disconnect", () => {
+      setConnected(false);
+      setQuickSearching(false);
+    });
+  }
+  function cancelQuickMatch() {
+    socket?.emit("quick-match-cancel");
+    socket?.disconnect();
+    setSocket(null);
+    setPlayers([]);
+    setQuickSearching(false);
+    setMessage("Quick Match search cancelled.");
   }
   function ready() {
     socket?.emit("set-ready", true);
@@ -844,9 +900,20 @@ function MultiplayerLobby({
       <p className="lobby-message">{message}</p>
       <div className="lobby-actions">
         {!inRoom ? (
-          <button className="primary" onClick={join}>
-            Connect to room
-          </button>
+          quickSearching ? (
+            <button className="primary" onClick={cancelQuickMatch}>
+              Cancel Quick Match
+            </button>
+          ) : (
+            <>
+              <button className="primary" onClick={quickMatch}>
+                <Zap size={17} /> Quick Match
+              </button>
+              <button className="ghost" onClick={join}>
+                Connect to room
+              </button>
+            </>
+          )
         ) : (
           <button className="primary" disabled={!connected} onClick={ready}>
             I am ready
@@ -858,6 +925,31 @@ function MultiplayerLobby({
       </div>
     </section>
   );
+}
+
+function minimaxBoardValue(board: Slot[]) {
+  return board.reduce((score, unit) => score + (unit ? unit.hp + (unit.hp <= unit.max / 2 ? 4 : 0) : 0), 0);
+}
+
+function minimaxEnemyTarget(board: Slot[], attacker: Unit, depth = 2) {
+  const apply = (current: Slot[], target: number) => current.map((unit, index) =>
+    index === target && unit ? { ...unit, hp: Math.max(0, unit.hp - attacker.dmg) } : unit,
+  );
+  const search = (current: Slot[], remaining: number, maximizing: boolean): number => {
+    const targets = current.map((unit, index) => unit ? index : -1).filter((index) => index >= 0);
+    if (!targets.length || remaining <= 0) return minimaxBoardValue(current);
+    const scores = targets.map((target) => {
+      const next = apply(current, target);
+      const immediate = minimaxBoardValue(next);
+      return immediate + (remaining > 1 ? search(next, remaining - 1, !maximizing) * 0.15 : 0);
+    });
+    return maximizing ? Math.min(...scores) : Math.max(...scores);
+  };
+  const targets = board.map((unit, index) => unit ? index : -1).filter((index) => index >= 0);
+  if (!targets.length) return -1;
+  return targets
+    .map((target) => ({ target, score: (board[target]?.hp === attacker.dmg ? 10000 : 0) + (board[target]?.max || 0) - (board[target]?.hp || 0) + search(apply(board, target), depth - 1, false) * 0.15 }))
+    .sort((a, b) => b.score - a.score)[0].target;
 }
 
 export default function Home() {
@@ -2860,14 +2952,13 @@ export default function Home() {
       return;
     }
     let pb = [...board],
-      live = shuffled(
-        enemyBoard
-          .map((x, i) => ({ x, i }))
-          .filter((a): a is { x: Unit; i: number } => !!a.x),
-      );
+      live = enemyBoard
+        .map((x, i) => ({ x, i }))
+        .filter((a): a is { x: Unit; i: number } => !!a.x)
+        .sort((a, b) => b.x.dmg - a.x.dmg);
     for (let n = 0; n < 3 && live.length; n++) {
       const attacker = live[n % live.length],
-        target = Math.floor(Math.random() * 9),
+        target = minimaxEnemyTarget(pb, attacker.x, 2),
         beeBoost =
           attacker.x.faction === "Autobot" &&
           (attacker.x.id === "bee" || attacker.x.role === "Commander") &&
@@ -2875,6 +2966,7 @@ export default function Home() {
           enemyBoard.some(
             (x) => x?.faction === "Autobot" && x.role === "Commander",
           );
+      if (target < 0) break;
       pb = applyEnemyHit(
         pb,
         target,

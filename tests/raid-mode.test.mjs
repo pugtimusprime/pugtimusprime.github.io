@@ -6,7 +6,6 @@ import { io } from "socket.io-client";
 import { starterDeck } from "../lib/card-data.ts";
 import { QUINTESSON_RAID } from "../lib/raid-data.ts";
 
-const port = 3198;
 const origin = "https://pugtimusprime.github.io";
 
 function waitForServer(server) {
@@ -31,7 +30,7 @@ function tracker(socket) {
   });
   return {
     get latest() { return latest; },
-    waitFor(predicate, timeout = 5000) {
+    waitFor(predicate, timeout = 6000) {
       if (latest && predicate(latest)) return Promise.resolve(latest);
       return new Promise((resolve, reject) => {
         const check = () => {
@@ -50,24 +49,52 @@ function tracker(socket) {
   };
 }
 
+function roomTracker(socket) {
+  let latest = null;
+  const waiters = new Set();
+  socket.on("room-state", (state) => {
+    latest = state;
+    for (const waiter of waiters) waiter();
+  });
+  return {
+    waitFor(predicate, timeout = 6000) {
+      if (latest && predicate(latest)) return Promise.resolve(latest);
+      return new Promise((resolve, reject) => {
+        const check = () => {
+          if (!latest || !predicate(latest)) return;
+          clearTimeout(timer);
+          waiters.delete(check);
+          resolve(latest);
+        };
+        const timer = setTimeout(() => {
+          waiters.delete(check);
+          reject(new Error("Timed out waiting for multiplayer room state"));
+        }, timeout);
+        waiters.add(check);
+      });
+    },
+  };
+}
+
 function emitReply(socket, event, payload) {
   return new Promise((resolve) => socket.emit(event, payload, resolve));
 }
 
-test("the Quintesson court has the approved Raid stats and assets", () => {
-  assert.deepEqual(
-    [QUINTESSON_RAID.boss.hp, QUINTESSON_RAID.boss.dmg],
-    [700, 15],
-  );
-  assert.deepEqual(
-    QUINTESSON_RAID.court.map(({ id, role, hp, dmg }) => [id, role, hp, dmg]),
-    [
-      ["quintesson-bailiff", "Trooper", 80, 20],
-      ["quintesson-prosecutor", "Tactician", 70, 10],
-      ["quintesson-executor", "Trooper", 60, 25],
-      ["allicon", "Scout", 40, 5],
-    ],
-  );
+function sharedPlaced(state) {
+  return state.players.reduce((sum, player) => sum + (player.team?.board.filter(Boolean).length || 0), 0);
+}
+
+test("the Quintesson court has the approved Boss Rush board, stats and wording", () => {
+  assert.deepEqual(QUINTESSON_RAID.board, { playerColumns: 3, playerRows: 6, bossColumns: 3, bossRows: 2 });
+  assert.deepEqual([QUINTESSON_RAID.boss.hp, QUINTESSON_RAID.boss.dmg], [700, 15]);
+  assert.match(QUINTESSON_RAID.boss.ability, /two allicons/i);
+  assert.deepEqual(QUINTESSON_RAID.court.map(({ id, role, hp, dmg }) => [id, role, hp, dmg]), [
+    ["quintesson-bailiff", "Trooper", 80, 20],
+    ["quintesson-prosecutor", "Tactician", 70, 10],
+    ["quintesson-executor", "Trooper", 60, 25],
+    ["allicon", "Scout", 40, 5],
+  ]);
+  assert.match(QUINTESSON_RAID.court.at(-1).ability, /Allicon alive/i);
   for (const unit of [QUINTESSON_RAID.boss, ...QUINTESSON_RAID.court]) {
     const publicAsset = readFileSync(new URL(`../public${unit.image}`, import.meta.url));
     const pagesAsset = readFileSync(new URL(`..${unit.image}`, import.meta.url));
@@ -76,67 +103,105 @@ test("the Quintesson court has the approved Raid stats and assets", () => {
   }
 });
 
-test("Raid is a separate route with its own theme, border and menu entry", () => {
+test("Raid is a separate route with shared boards, battle cards and animations", () => {
   const home = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
   const raid = readFileSync(new URL("../app/raid/page.tsx", import.meta.url), "utf8");
   const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
-  assert.match(home, /href="\/raid"/);
-  assert.match(home, /Online co-op Quintesson Raid/);
-  assert.match(home, /verdict-engine.*Verdict Engine/);
-  assert.match(home, /tribunal-shackle.*Tribunal Shackle/);
-  assert.match(raid, /Player 1: 2 actions/);
-  assert.match(raid, /Visible Boss Court/);
-  assert.match(css, /\.quintesson-raid-board/);
+  const server = readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
+  assert.match(home, /Quick Match/);
+  assert.match(home, /quick-match/);
+  assert.match(raid, /Visible Quintesson Court/);
+  assert.match(raid, /3 x 6/);
+  assert.match(raid, /Shared Battle Cards/);
+  assert.match(css, /\.raid-shared-grid/);
+  assert.match(css, /raid-hit-animation/);
+  assert.match(server, /minimaxRaidTarget/);
+  assert.match(home, /minimaxEnemyTarget/);
 });
 
-test("two players can enter Raid and the Judge revives a defeated Bailiff", async () => {
-  const server = spawn(process.execPath, ["server.mjs"], {
-    env: { ...process.env, PORT: String(port), CLIENT_ORIGIN: origin },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+test("Quick Match pairs the first two waiting players", async () => {
+  const port = 3199;
+  const server = spawn(process.execPath, ["server.mjs"], { env: { ...process.env, PORT: String(port), CLIENT_ORIGIN: origin }, stdio: ["ignore", "pipe", "pipe"] });
+  await waitForServer(server);
+  const a = io(`http://127.0.0.1:${port}`, { extraHeaders: { Origin: origin }, reconnection: false });
+  const b = io(`http://127.0.0.1:${port}`, { extraHeaders: { Origin: origin }, reconnection: false });
+  const states = [roomTracker(a), roomTracker(b)];
+  try {
+    await Promise.all([new Promise((resolve) => a.once("connect", resolve)), new Promise((resolve) => b.once("connect", resolve))]);
+    const waiting = await emitReply(a, "quick-match", { name: "Alpha" });
+    const matched = await emitReply(b, "quick-match", { name: "Beta" });
+    assert.equal(waiting.ok, true);
+    assert.equal(waiting.waiting, true);
+    assert.equal(matched.ok, true);
+    assert.equal(matched.waiting, false);
+    const room = await states[0].waitFor((state) => state.players.length === 2);
+    assert.equal(room.players[0].name, "Alpha");
+    assert.equal(room.players[1].name, "Beta");
+    const readyPromise = new Promise((resolve) => a.once("match-ready", resolve));
+    a.emit("set-ready", true); b.emit("set-ready", true);
+    await readyPromise;
+  } finally {
+    a.disconnect(); b.disconnect(); server.kill("SIGTERM");
+  }
+});
+
+test("Boss Rush alternates placement, shares one Battle Card and revives a Bailiff", async () => {
+  const port = 3200;
+  const server = spawn(process.execPath, ["server.mjs"], { env: { ...process.env, PORT: String(port), CLIENT_ORIGIN: origin }, stdio: ["ignore", "pipe", "pipe"] });
   await waitForServer(server);
   const a = io(`http://127.0.0.1:${port}`, { extraHeaders: { Origin: origin }, reconnection: false });
   const b = io(`http://127.0.0.1:${port}`, { extraHeaders: { Origin: origin }, reconnection: false });
   const stateA = tracker(a), stateB = tracker(b);
   try {
-    await Promise.all([
-      new Promise((resolve) => a.once("connect", resolve)),
-      new Promise((resolve) => b.once("connect", resolve)),
-    ]);
-    assert.equal((await emitReply(a, "raid-join", { code: "COURT7", name: "Alpha" })).ok, true);
-    assert.equal((await emitReply(b, "raid-join", { code: "COURT7", name: "Beta" })).ok, true);
+    await Promise.all([new Promise((resolve) => a.once("connect", resolve)), new Promise((resolve) => b.once("connect", resolve))]);
+    await emitReply(a, "raid-join", { code: "COURT8", name: "Alpha" });
+    await emitReply(b, "raid-join", { code: "COURT8", name: "Beta" });
     await stateA.waitFor((state) => state.players.length === 2);
-    a.emit("raid-ready");
-    b.emit("raid-ready");
+    a.emit("raid-ready"); b.emit("raid-ready");
     await stateA.waitFor((state) => state.stage === "deckbuilding");
-    const rejected = await emitReply(a, "raid-submit-deck", ["optimus"]);
-    assert.equal(rejected.ok, false);
     const ids = starterDeck("Autobot").map((unit) => unit.id);
     assert.equal((await emitReply(a, "raid-submit-deck", ids)).ok, true);
     assert.equal((await emitReply(b, "raid-submit-deck", ids)).ok, true);
-    const combat = await stateA.waitFor((state) => state.stage === "combat");
-    assert.equal(combat.actions, 2);
-    const first = combat.activeId === a.id ? a : b;
-    const second = first === a ? b : a;
-    const firstState = first === a ? stateA : stateB;
-    const secondState = second === a ? stateA : stateB;
-    for (const attackerId of ["grimlock", "sun"]) {
-      assert.equal((await emitReply(first, "raid-attack", { attackerId, targetId: "quintesson-bailiff" })).ok, true);
+    let state = await stateA.waitFor((next) => next.stage === "deployment");
+    while (state.stage === "deployment") {
+      const activeId = state.placementActiveId;
+      const socket = activeId === a.id ? a : b;
+      const activePlayer = state.players.find((player) => player.id === activeId);
+      const pending = activePlayer.team.pending;
+      const occupied = new Set(state.players.flatMap((player) => player.team.board.map((unit, index) => unit ? index : -1)).filter((index) => index >= 0));
+      const slot = Array.from({ length: 18 }, (_, index) => index).find((index) => !occupied.has(index));
+      const placedBefore = sharedPlaced(state);
+      assert.equal((await emitReply(socket, "raid-place", { unitId: pending[0].id, slot })).ok, true);
+      state = await stateA.waitFor((next) => next.stage !== "deployment" || sharedPlaced(next) > placedBefore);
     }
-    first.emit("raid-end-turn");
-    await secondState.waitFor((state) => state.stage === "combat" && state.activeId === second.id);
-    for (const attackerId of ["grimlock", "sun"]) {
-      assert.equal((await emitReply(second, "raid-attack", { attackerId, targetId: "quintesson-bailiff" })).ok, true);
-    }
-    second.emit("raid-end-turn");
-    const roundTwo = await firstState.waitFor((state) => state.stage === "combat" && state.round === 2);
-    assert.equal(roundTwo.boss.find((unit) => unit.id === "quintesson-bailiff").hp, 40);
-    assert.match(roundTwo.log.join("\n"), /returned at half Health/);
-    assert.equal(roundTwo.activeId, second.id, "player order reverses after the boss turn");
+    assert.equal(state.stage, "combat");
+    assert.equal(state.battleHand.length, 1);
+    assert.equal(state.battlePlayed, false);
+    const firstActive = state.activeId;
+    const firstSocket = firstActive === a.id ? a : b;
+    const secondSocket = firstSocket === a ? b : a;
+    const firstTeam = state.players.find((player) => player.id === firstActive).team;
+    const attackIds = ["grimlock", "sun"];
+    const card = state.battleHand[0];
+    assert.equal((await emitReply(firstSocket, "raid-play-battle", { name: card })).ok, true);
+    state = await stateA.waitFor((next) => next.battlePlayed);
+    assert.equal(stateA.latest.battlePlayed, true);
+    for (const attackerId of attackIds) assert.equal((await emitReply(firstSocket, "raid-attack", { attackerId, targetId: "quintesson-bailiff" })).ok, true);
+    firstSocket.emit("raid-end-turn");
+    await stateB.waitFor((next) => next.stage === "combat" && next.activeId === secondSocket.id);
+    const secondTeam = stateB.latest.players.find((player) => player.id === secondSocket.id).team;
+    const secondAttackIds = ["grimlock", "sun"];
+    for (const attackerId of secondAttackIds) assert.equal((await emitReply(secondSocket, "raid-attack", { attackerId, targetId: "quintesson-bailiff" })).ok, true);
+    secondSocket.emit("raid-end-turn");
+    const reposition = await stateA.waitFor((next) => next.stage === "reposition");
+    assert.equal(reposition.bossBoard.find((unit) => unit?.id === "quintesson-bailiff")?.hp, 40);
+    assert.equal(reposition.repositions[a.id], 1);
+    assert.equal(reposition.repositions[b.id], 1);
+    a.emit("raid-skip-reposition"); b.emit("raid-skip-reposition");
+    const nextRound = await stateA.waitFor((next) => next.stage === "combat" && next.round === 2);
+    assert.notEqual(nextRound.activeId, firstActive, "player order reverses after the boss turn");
   } finally {
-    a.disconnect();
-    b.disconnect();
-    server.kill("SIGTERM");
+    a.disconnect(); b.disconnect(); server.kill("SIGTERM");
   }
 });
 

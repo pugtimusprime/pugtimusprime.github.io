@@ -123,28 +123,34 @@ The production client is hosted on GitHub Pages and the multiplayer server is ho
 
 1. Open the game and choose **Multiplayer**.
 2. Leave the Render server address as `https://hidden-front-server.onrender.com`.
-3. Enter a player name and a shared room code of at least three characters.
-4. Both players connect using the same room code.
-5. Both press **I am ready**.
-6. Build and lock decks, study the revealed opponent roster, and secretly deploy six characters.
+3. Choose **Quick Match** to join the first available waiting player, or enter a player name and shared room code for a private room.
+4. Both players press **I am ready**.
+5. Build and lock decks, study the revealed opponent roster, and secretly deploy six characters.
 
 Render's free service may sleep when inactive. The first connection after a quiet period can take roughly a minute while the server wakes up. Both players should keep the game page open during a match.
 
 ## Online co-op Quintesson Raid
 
 Choose **Quintesson Raid** from the main menu and share a Raid room code with
-one friend. This is a separate two-player PvE mode: both players build legal
-nine-character decks, order six deployed characters plus three Backups, and
-fight the same always-visible Quintesson court.
+one friend. This is a separate two-player PvE Boss Rush: both players build
+legal nine-character decks, take turns placing six characters onto a shared
+3-wide by 6-tall grid, and fight the same always-visible Quintesson court.
+The Judge occupies a larger leader space behind the boss faction's 2-by-3
+troop board. Players can only move and attack with their own cards.
 
 Each round gives the first player two actions and the second player two actions,
 then the server runs the boss turn. Player order reverses for the next round.
+One shared Battle Card is drawn for the round and only one may be played across
+both player turns. Each player gets one Reposition move; after attacking, the
+boss court uses two Reposition moves of its own.
 The Bailiff halves damage to the Judge, the Prosecutor marks the lowest-Health
 player character for +10 damage on the next Quintesson strike, the Executor
 deals +10 to characters at half Health or lower, and additional Allicons gain up
-to +10 damage from their pack. The Judge begins at 700 Health and revives a
-defeated named troop at half Health—or summons an Allicon when the court has no
-fallen named troop and fewer than three living troops. Defeat the Judge to win.
+to +10 damage from their pack. The Judge begins at 700 Health and, at the start
+of each boss turn, revives one defeated Quintesson troop at half Health; if none
+are defeated, he places one Allicon, with no more than two Allicons on the
+board. Defeat the Judge to win. Both Solo and Boss Rush AI use minimax target
+selection so the opponent prioritizes meaningful threats.
 
 ## Development
 
