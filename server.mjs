@@ -48,7 +48,7 @@ function createRaidRoom(code) {
     placementOrder:[], placementIndex:0, turnOrder:[], turnIndex:0, actions:2,
     judge:{...raidTemplates.judge}, bossBoard:[{...raidTemplates.bailiff},{...raidTemplates.prosecutor},{...raidTemplates.executor},null,null,null],
     fallen:[], enemyDefeatPending:false, alliconSerial:0, log:["The Quintesson Tribunal awaits judgement."],
-    battleDeck:makeBattleDeck(), battleHand:[], battlePlayed:false, repositions:new Map(), eventSeq:0,
+    battleDeck:makeBattleDeck(), battleHand:[], battlePlayed:false, repositions:new Map(), courtFeedback:new Map(), eventSeq:0,
     markedTarget:null, bossIntel:new Map(), revealedBossSlots:new Set(), bossTacticianDisabledUntil:0, repositionBlockedUntil:0,
   };
 }
@@ -80,7 +80,7 @@ function raidPublic(room, viewer) {
     placementActiveId:room.stage === "deployment" ? room.placementOrder[room.placementIndex] || null : null,
     actions:room.actions, repositions:Object.fromEntries(room.repositions),
     players:[...room.players.values()].map(p=>({...p,ready:room.ready.has(p.id),team:publicRaidTeam(room.teams.get(p.id),p.id,viewer)})),
-    judge:room.judge, boss:[room.judge], bossBoard:publicBossBoard(room),
+    judge:room.judge, boss:[room.judge], bossBoard:publicBossBoard(room), courtFeedback:Object.fromEntries(room.courtFeedback),
     battleHand:room.battleHand, battlePlayed:room.battlePlayed, log:room.log.slice(-30), eventSeq:room.eventSeq,
   };
 }
@@ -205,6 +205,7 @@ function moveBossMinimax(room) {
     [room.bossBoard[best.from],room.bossBoard[best.to]]=[room.bossBoard[best.to],room.bossBoard[best.from]];
   }
   room.revealedBossSlots.clear();
+  room.courtFeedback.clear();
   room.log.push("The Quintesson court repositioned two spaces.");
   raidEvent(room,{kind:"reposition",side:"boss"});
 }
@@ -300,7 +301,7 @@ function raidBossTurn(room) {
 function startRaidRound(room) {
   room.round += 1; room.stage="combat"; room.turnIndex=0; room.repositions.clear(); room.turnOrder.reverse();
   if(!room.turnOrder.length) room.turnOrder=[...room.players.keys()];
-  room.actions=2; room.battlePlayed=false; drawRaidCards(room,1); room.teams.forEach((team)=>{team.used=[];team.usedAbilities=[];team.faceOff=false;team.traps=[];team.hiddenSpaces=[];}); emitRaid(room);
+  room.actions=2; room.battlePlayed=false; room.courtFeedback.clear(); drawRaidCards(room,1); room.teams.forEach((team)=>{team.used=[];team.usedAbilities=[];team.faceOff=false;team.traps=[];team.hiddenSpaces=[];}); emitRaid(room);
 }
 function completeRaidReposition(room) {
   if([...room.repositions.values()].some((moves)=>moves>0)) return;
@@ -672,12 +673,23 @@ io.on("connection", (socket) => {
     const room=raidRooms.get(socket.data.raidCode),team=room?.teams.get(socket.id);
     if(!room||room.stage!=="combat"||room.turnOrder[room.turnIndex]!==socket.id||room.actions<=0)return reply({ok:false,error:"It is not your attack turn."});
     const attackerSlot=team?.board.findIndex((unit)=>unit?.id===attackerId&&unit.hp>0) ?? -1;
-    const attacker=attackerSlot>=0?team.board[attackerSlot]:null,target=findBossTarget(room,targetId,targetSlot);
+    const attacker=attackerSlot>=0?team.board[attackerSlot]:null;
+    const courtTarget=!targetId&&Number.isInteger(targetSlot)&&targetSlot>=0&&targetSlot<room.bossBoard.length
+      ? {unit:room.bossBoard[targetSlot]||null,slot:targetSlot}
+      : null;
+    const target=targetId?findBossTarget(room,targetId,targetSlot):courtTarget;
     if(!attacker||!target)return reply({ok:false,error:"Choose one of your characters and a living boss card."});
     if((team.used||[]).includes(attacker.id))return reply({ok:false,error:"That character already attacked this turn."});
+    team.used=[...(team.used||[]),attacker.id]; room.actions--;
+    if(!target.unit) {
+      room.courtFeedback.set(target.slot,"MISS");
+      room.log.push(`${attacker.name} fired at Court space ${target.slot+1} and missed.`);
+      raidEvent(room,{kind:"miss",attackerId:attacker.id,targetSlot:target.slot,side:"players"});
+      reply({ok:true}); emitRaid(room); return;
+    }
     let damage=raidAttackDamage(room,team,attacker,attackerSlot);
     damage=resolveBossDamage(room,target,damage);
-    team.used=[...(team.used||[]),attacker.id]; room.actions--;
+    if(target.slot>=0) room.courtFeedback.set(target.slot,"OCCUPIED");
     const targetName = target.unit.id === room.judge.id ? target.unit.name : "a hidden Quintesson troop";
     room.log.push(`${attacker.name} dealt ${damage} to ${targetName}.`);
     raidEvent(room,{kind:"hit",attackerId:attacker.id,targetId:target.unit.id===room.judge.id?target.unit.id:undefined,targetSlot:target.unit.id===room.judge.id?undefined:target.slot,damage,side:"players",defeated:target.unit.hp===0});
@@ -797,6 +809,22 @@ io.on("connection", (socket) => {
     [team.board[from],team.board[to]]=[team.board[to],team.board[from]];
     const intel=raidIntel(room,socket.id); [from,to].forEach((slot)=>{intel.occupied.delete(slot);intel.empty.delete(slot);});
     room.repositions.set(socket.id,0);room.log.push(`${room.players.get(socket.id)?.name||"Player"} used one Reposition move.`);raidEvent(room,{kind:"reposition",side:"players",playerId:socket.id});reply({ok:true});emitRaid(room);completeRaidReposition(room);
+  });
+  socket.on("raid-backup-swap",({backupId,slot}={},reply=()=>{})=>{
+    const room=raidRooms.get(socket.data.raidCode),team=room?.teams.get(socket.id);
+    if(!room||!team||room.stage!=="reposition"||(room.repositions.get(socket.id)||0)<=0)return reply({ok:false,error:"You have no Reposition move remaining."});
+    if(!Number.isInteger(slot)||slot<0||slot>=9||!team.board[slot])return reply({ok:false,error:"Choose one of your deployed characters."});
+    const backupIndex=team.backups.findIndex((unit)=>unit.id===backupId);
+    if(backupIndex<0)return reply({ok:false,error:"That Backup is unavailable."});
+    const replaced=team.board[slot];
+    const replacement=team.backups.splice(backupIndex,1)[0];
+    team.board[slot]=replacement;
+    team.backups.push(replaced);
+    const intel=raidIntel(room,socket.id); intel.occupied.delete(slot); intel.empty.delete(slot);
+    room.repositions.set(socket.id,0);
+    room.log.push(`${room.players.get(socket.id)?.name||"Player"} swapped ${replacement.name} into board space ${slot+1}.`);
+    raidEvent(room,{kind:"reposition",side:"players",playerId:socket.id});
+    reply({ok:true}); emitRaid(room); completeRaidReposition(room);
   });
   socket.on("raid-skip-reposition",()=>{
     const room=raidRooms.get(socket.data.raidCode);
