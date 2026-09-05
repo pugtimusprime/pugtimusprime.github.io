@@ -7,8 +7,8 @@ import { battleCards, allUnits, starterDeck, type Unit } from "@/lib/card-data";
 
 type RaidStage = "lobby" | "deckbuilding" | "deployment" | "combat" | "boss" | "reposition" | "victory" | "defeat";
 type RaidBossUnit = { id:string; name:string; role:string; max:number; hp:number; dmg:number; image:string; ability:string };
-type RaidBossSlot = { slot:number; hidden:true; occupied:true };
-type RaidTeam = { board:(Unit|null)[]; backups:Unit[]; pending?:Unit[]; used:string[] };
+type RaidBossSlot = { slot:number; hidden:boolean; occupied:true; id?:string; name?:string; role?:string; max?:number; hp?:number; dmg?:number; image?:string; ability?:string };
+type RaidTeam = { board:(Unit|null)[]; backups:Unit[]; pending?:Unit[]; used:string[]; usedAbilities?:string[]; faceOff?:boolean; armor?:number; traps?:number[]; hiddenSpaces?:number[] };
 type RaidPlayer = { id:string; name:string; ready:boolean; team:RaidTeam|null };
 type RaidState = {
   code:string; stage:RaidStage; round:number; youId:string; activeId:string|null; placementActiveId:string|null;
@@ -17,6 +17,7 @@ type RaidState = {
 };
 type RaidReply = { ok:boolean; error?:string; recovered?:boolean };
 type RaidEvent = { kind:string; seq:number; attackerId?:string; targetId?:string; targetSlot?:number; damage?:number; name?:string; side?:string; defeated?:boolean };
+type BattleTarget = { name:string; mode:"ally"|"boss"|"row"|"empty" } | null;
 
 const raidServer = "https://hidden-front-server.onrender.com";
 
@@ -34,6 +35,8 @@ export default function RaidPage() {
   const [deck, setDeck] = useState<Unit[]>(() => starterDeck("Autobot"));
   const [locked, setLocked] = useState(false);
   const [attacker, setAttacker] = useState<string|null>(null);
+  const [abilitySource, setAbilitySource] = useState<string|null>(null);
+  const [battleTarget, setBattleTarget] = useState<BattleTarget>(null);
   const [placement, setPlacement] = useState<string|null>(null);
   const [moveSource, setMoveSource] = useState<number|null>(null);
   const [animation, setAnimation] = useState<RaidEvent|null>(null);
@@ -46,6 +49,8 @@ export default function RaidPage() {
       if (next.stage !== "deckbuilding") setLocked(false);
       if (next.stage !== "combat") setAttacker(null);
       if (next.stage !== "reposition") setMoveSource(null);
+      if (next.stage !== "combat" || next.battlePlayed) setBattleTarget(null);
+      if (next.stage !== "combat") setAbilitySource(null);
     };
     const onEvent = (event:RaidEvent) => {
       setAnimation(event);
@@ -64,7 +69,7 @@ export default function RaidPage() {
   const legal = deck.length === 9 && counts.Commander === 2 && counts.Scout === 3 && counts.Trooper === 2 && counts.Tactician === 2;
   const boardFor = (player:RaidPlayer|undefined) => player?.team?.board || Array(9).fill(null);
   const ownUnitAt = (slot:number) => me?.team?.board[slot] || null;
-  const isAnimated = (id?:string, slot?:number) => animation && ((id && animation.targetId===id) || (Number.isInteger(slot) && animation.targetSlot===slot)) ? `raid-hit-animation raid-animation-${animation.seq}` : "";
+  const isAnimated = (id?:string, slot?:number) => animation && (((id && animation.targetId===id) || (Number.isInteger(slot) && animation.targetSlot===slot) || animation.kind==="reposition")) ? `raid-hit-animation raid-animation-${animation.seq}` : "";
 
   function join() {
     const url = server.trim().replace(/\/$/, "");
@@ -102,15 +107,79 @@ export default function RaidPage() {
   function chooseCombatCard(unit:Unit) {
     if (!active || unit.hp <= 0 || me?.team?.used?.includes(unit.id)) return;
     setAttacker((current) => current === unit.id ? null : unit.id);
+    setAbilitySource(null);
+  }
+  const abilityTargets = new Set(["eject","bombshell","shockwave","head","arachnia"]);
+  const raidActiveAbilities = new Set(["eject","wheeljack","soundwave","bombshell","overlord","shockwave","pmega","wasp","head","arachnia","razor","getaway","grapple","highbrow","hoist","bludgeon","jhiaxus","rumble","rattrap","rhinox","cyclonus"]);
+  function useAbility(sourceId:string) {
+    if (!active || !me?.team) return;
+    const source = me.team.board.find((unit) => unit?.id===sourceId) || me.team.backups.find((unit) => unit?.id===sourceId);
+    if (!source || !(source.abilityUses>0) || me.team.usedAbilities?.includes(sourceId)) return;
+    if (!raidActiveAbilities.has(sourceId) && sourceId!=="galvatron") {
+      setMessage(`${source.name}'s ability triggers automatically during combat.`);
+      return;
+    }
+    setAttacker(null);
+    if (abilityTargets.has(sourceId)) {
+      setAbilitySource((current) => current===sourceId ? null : sourceId);
+      setMessage(sourceId==="head" ? "Choose a court space. Headstrong will destroy both cards if occupied." : `${source.name} is ready. Choose a court target.`);
+      return;
+    }
+    socket?.emit("raid-use-ability", { sourceId }, (reply:RaidReply) => {
+      if (!reply.ok) setMessage(reply.error || "That unique ability cannot be used now.");
+    });
   }
   function attack(targetId?:string, targetSlot?:number) {
-    if (!attacker || !active) return;
+    if (!active) return;
+    if (abilitySource) {
+      socket?.emit("raid-use-ability", { sourceId:abilitySource, ...(targetId ? { targetId } : { targetSlot }) }, (reply:RaidReply) => {
+        if (!reply.ok) setMessage(reply.error || "That unique ability cannot target this space.");
+      });
+      setAbilitySource(null);
+      return;
+    }
+    if (battleTarget?.mode==="boss") {
+      if (battleTarget.name==="War Dawn" && Number.isInteger(targetSlot)) chooseBattleRow(Math.floor((targetSlot as number)/3));
+      else useBattleCard(battleTarget.name, targetId, targetSlot);
+      return;
+    }
+    if (!attacker) return;
     socket?.emit("raid-attack", { attackerId:attacker, ...(targetId ? { targetId } : { targetSlot }) }, (reply:RaidReply) => { if (!reply.ok) setMessage(reply.error || "That attack is unavailable."); });
     setAttacker(null);
   }
-  function useBattleCard(card:string) {
+  const battleTargets = (name:string):BattleTarget["mode"]|null => name==="Roll Out"||name==="Power Of The Primes"||name==="Armor Plating" ? "ally" : name==="Deserved Punishment"||name==="War Dawn" ? "boss" : name==="Ambush Trap" ? "empty" : null;
+  function selectBattleCard(card:string) {
     if (!active || state?.battlePlayed) return;
-    socket?.emit("raid-play-battle", { name:card }, (reply:RaidReply) => { if (!reply.ok) setMessage(reply.error || "That shared Battle Card cannot be played now."); });
+    const mode=battleTargets(card);
+    if (mode) {
+      setBattleTarget((current) => current?.name===card ? null : {name:card,mode});
+      setAttacker(null);
+      setAbilitySource(null);
+      setMessage(mode==="ally" ? `${card}: choose one of your characters.` : mode==="empty" ? `${card}: choose an empty space on your board.` : `${card}: choose a boss target.`);
+      return;
+    }
+    useBattleCard(card);
+  }
+  function useBattleCard(card:string, targetId?:string, targetSlot?:number, row?:number) {
+    if (!active || state?.battlePlayed) return;
+    if (targetId || Number.isInteger(targetSlot) || Number.isInteger(row)) {
+      socket?.emit("raid-play-battle", { name:card, ...(targetId ? {targetId} : {}), ...(Number.isInteger(targetSlot) ? {targetSlot} : {}), ...(Number.isInteger(row) ? {row} : {}) }, (reply:RaidReply) => { if (!reply.ok) setMessage(reply.error || "That shared Battle Card cannot be played now."); });
+    } else {
+      socket?.emit("raid-play-battle", { name:card }, (reply:RaidReply) => { if (!reply.ok) setMessage(reply.error || "That shared Battle Card cannot be played now."); });
+    }
+    setBattleTarget(null);
+  }
+  function chooseAllyTarget(unit:Unit) {
+    if (!battleTarget || battleTarget.mode!=="ally") return;
+    useBattleCard(battleTarget.name, unit.id);
+  }
+  function chooseEmptyTarget(slot:number) {
+    if (!battleTarget || battleTarget.mode!=="empty" || ownUnitAt(slot)) return;
+    useBattleCard(battleTarget.name, undefined, slot);
+  }
+  function chooseBattleRow(row:number) {
+    if (!battleTarget || battleTarget.mode!=="boss") return;
+    useBattleCard(battleTarget.name, undefined, undefined, row);
   }
   function reposition(slot:number) {
     if (!moving) return;
@@ -151,8 +220,8 @@ export default function RaidPage() {
 
   if (state.stage === "deployment") return (
     <main className="raid-page raid-combat-page"><header className="raid-header"><div><p className="eyebrow">SEPARATE DEPLOYMENT BOARDS · {state.code}</p><h1>{placing ? "Your placement turn" : `${state.players.find((player) => player.id===state.placementActiveId)?.name || "Your ally"}'s placement turn`}</h1></div><b>{state.players.reduce((sum,player) => sum+(player.team?.board.filter(Boolean).length || 0),0)}/12 placed</b></header>
-      <section className="raid-player-boards-panel"><div className="raid-board-title"><div><p>ALLIED STRIKE FORMATION</p><h2>Two 3 × 3 player boards</h2></div><span>{placing ? "PLACE ON YOUR HIGHLIGHTED BOARD" : "WAIT FOR YOUR ALLY"}</span></div><div className="raid-player-boards">{state.players.map((player,index) => {const own=player.id===state.youId;const board=boardFor(player);return <section key={player.id} className={`raid-player-board ${own ? "your-board" : "ally-board"}`}><header><div><strong>PLAYER {index+1} · {own ? "YOU" : player.name.toUpperCase()}</strong><small>{own ? "YOUR BOARD · CONTROLS UNLOCKED" : "ALLY BOARD · LOCKED TO OWNER"}</small></div><span>{board.filter(Boolean).length}/6 deployed</span></header><div className="raid-player-grid">{Array.from({length:9},(_,slot) => {const unit=board[slot];return <button key={slot} className={`raid-slot ${unit ? own ? "own-slot" : "ally-slot" : "vacant"}`} onClick={() => own ? choosePlacement(slot) : undefined} disabled={!own || !placing || Boolean(unit)}>{unit ? <><CardImage src={unit.image} alt={unit.name}/><b>{unit.name}</b><small>{own ? "YOUR CARD" : "ALLY CARD"}</small></> : <span>SPACE {slot+1}</span>}</button>;})}</div></section>;})}</div></section>
-      <section className="raid-placement-hand"><h2>Your six to place</h2><p>Placement alternates one card at a time. Each player can place cards only on their own highlighted 3 × 3 board.</p><div>{me?.team?.pending?.map((unit) => <button key={unit.id} className={placement===unit.id ? "selected" : ""} disabled={!placing} onClick={() => setPlacement((current) => current===unit.id ? null : unit.id)}><CardImage src={unit.image} alt={unit.name}/><span>{unit.name}</span></button>)}</div><p className="raid-message">{placement ? `Selected ${me?.team?.pending?.find((unit) => unit.id===placement)?.name}. Choose an empty space on your board.` : message}</p></section>
+      <div className="raid-deployment-layout"><section className="raid-player-boards-panel"><div className="raid-board-title"><div><p>ALLIED STRIKE FORMATION</p><h2>Two 3 × 3 player boards</h2></div><span>{placing ? "PLACE ON YOUR HIGHLIGHTED BOARD" : "WAIT FOR YOUR ALLY"}</span></div><div className="raid-player-boards">{state.players.map((player,index) => {const own=player.id===state.youId;const board=boardFor(player);return <section key={player.id} className={`raid-player-board ${own ? "your-board" : "ally-board"}`}><header><div><strong>PLAYER {index+1} · {own ? "YOU" : player.name.toUpperCase()}</strong><small>{own ? "YOUR BOARD · CONTROLS UNLOCKED" : "ALLY BOARD · LOCKED TO OWNER"}</small></div><span>{board.filter(Boolean).length}/6 deployed</span></header><div className="raid-player-grid">{Array.from({length:9},(_,slot) => {const unit=board[slot];return <button key={slot} className={`raid-slot ${unit ? own ? "own-slot" : "ally-slot" : "vacant"}`} onClick={() => own ? choosePlacement(slot) : undefined} disabled={!own || !placing || Boolean(unit)}>{unit ? <><CardImage src={unit.image} alt={unit.name}/><b>{unit.name}</b><small>{own ? "YOUR CARD" : "ALLY CARD"}</small></> : <span>SPACE {slot+1}</span>}</button>;})}</div></section>;})}</div></section>
+      <section className="raid-placement-hand"><h2>Your six to place</h2><p>Placement alternates one card at a time. Each player can place cards only on their own highlighted 3 × 3 board.</p><div>{me?.team?.pending?.map((unit) => <button key={unit.id} className={placement===unit.id ? "selected" : ""} disabled={!placing} onClick={() => setPlacement((current) => current===unit.id ? null : unit.id)}><CardImage src={unit.image} alt={unit.name}/><span>{unit.name}</span></button>)}</div><p className="raid-message">{placement ? `Selected ${me?.team?.pending?.find((unit) => unit.id===placement)?.name}. Choose an empty space on your board.` : message}</p></section></div>
     </main>
   );
 
@@ -160,10 +229,10 @@ export default function RaidPage() {
   const activeName=state.players.find((player) => player.id===state.activeId)?.name;
   return (
     <main className="raid-page raid-combat-page"><header className="raid-header"><div><p className="eyebrow">QUINTESSON BOSS RUSH · ROUND {state.round}</p><h1>{state.stage==="victory" ? "Boss Rush Victory" : state.stage==="defeat" ? "Boss Rush Defeat" : state.stage==="boss" ? "Boss Turn" : state.stage==="reposition" ? "Repositioning" : active ? "Your Turn" : `${activeName || "Your ally"}'s Turn`}</h1></div><b>{active ? `${state.actions} actions` : state.stage==="reposition" ? `${state.repositions[state.youId] || 0} move` : "Stand by"}</b>{finished ? <Link className="ghost" href="/">Return to menu</Link> : null}</header>
-      <section className="raid-arena"><section className="raid-player-boards-panel"><div className="raid-board-title"><div><p>ALLIED STRIKE FORMATION</p><h2>Player boards</h2></div><span>{moving ? "SELECT A CARD, THEN A SPACE" : active ? "SELECT YOUR CARD, THEN A BOSS" : "YOUR BOARD IS HIGHLIGHTED"}</span></div><div className="raid-player-boards">{state.players.map((player,index) => {const own=player.id===state.youId;const board=boardFor(player);return <section key={player.id} className={`raid-player-board ${own ? "your-board" : "ally-board"}`}><header><div><strong>PLAYER {index+1} · {own ? "YOU" : player.name.toUpperCase()}</strong><small>{own ? "YOUR BOARD · CONTROLS UNLOCKED" : "ALLY BOARD · LOCKED TO OWNER"}</small></div><span>{board.filter(Boolean).length}/6 deployed</span></header><div className="raid-player-grid">{Array.from({length:9},(_,slot) => {const unit=board[slot];const selected=own && moveSource===slot;const disabled=moving ? !own || (moveSource===null ? !unit : false) : !active || !own || !unit || Boolean(me?.team?.used?.includes(unit.id));return <button key={slot} className={`raid-slot ${unit ? own ? "own-slot" : "ally-slot" : "vacant"} ${selected ? "move-source" : ""} ${unit ? isAnimated(unit.id) : ""}`} onClick={() => moving ? own ? reposition(slot) : undefined : own && unit ? chooseCombatCard(unit) : undefined} disabled={disabled}>{unit ? <><CardImage src={unit.image} alt={unit.name}/><b>{unit.name}</b><small>{own ? `${unit.hp}/${unit.max} HP · YOUR CARD` : `${unit.hp}/${unit.max} HP · ALLY CARD`}</small>{animation?.targetId===unit.id && animation.damage ? <em className="raid-damage-pop">-{animation.damage}</em> : null}</> : <span>SPACE {slot+1}</span>}</button>;})}</div><div className="raid-board-backups"><strong>BACKUPS · {player.team?.backups.length || 0} REMAIN</strong>{own ? <span>{player.team?.backups.length ? player.team.backups.map((unit) => unit.name).join(" · ") : "None"}</span> : <span>Hidden from opponent</span>}</div></section>;})}</div></section>
-        <section className="quintesson-raid-board raid-boss-panel"><div className="raid-board-title"><div><p>VERDICT CHAMBER</p><h2>Quintesson Court</h2></div><span>{state.bossBoard.filter(Boolean).length}/6 HIDDEN TROOPS</span></div><div className="raid-judge-space"><button className={`raid-judge-card ${isAnimated(state.judge.id)}`} onClick={() => attack(state.judge.id)} disabled={!active || !attacker}><CardImage src={state.judge.image} alt={state.judge.name}/><div><strong>{state.judge.name}</strong><span>{state.judge.hp}/{state.judge.max} HP · {state.judge.dmg} DMG</span><small>{state.judge.ability}</small></div>{animation?.targetId===state.judge.id && animation.damage ? <em className="raid-damage-pop">-{animation.damage}</em> : null}</button></div><div className="raid-boss-board">{state.bossBoard.map((unit,slot) => <button key={slot} className={`raid-boss-slot ${unit ? isAnimated(undefined,slot) : "vacant"}`} onClick={() => unit && attack(undefined,slot)} disabled={!active || !attacker || !unit} aria-label={unit ? `Hidden Quintesson troop in court space ${slot+1}` : `Empty court space ${slot+1}`}>{unit ? <><span className="raid-hidden-card-back">?</span><strong>Hidden Quintesson troop</strong><span>IDENTITY CONCEALED · SPACE {slot+1}</span><small>Target this occupied space to strike the hidden card.</small>{animation?.targetSlot===slot && animation.damage ? <em className="raid-damage-pop">-{animation.damage}</em> : null}</> : <span>EMPTY COURT SPACE</span>}</button>)}</div></section>
+      <section className="raid-arena"><section className="raid-player-boards-panel"><div className="raid-board-title"><div><p>ALLIED STRIKE FORMATION</p><h2>Player boards</h2></div><span>{moving ? "SELECT A CARD, THEN A SPACE" : battleTarget ? `TARGET: ${battleTarget.name}` : active ? "SELECT YOUR CARD, THEN A BOSS" : "YOUR BOARD IS HIGHLIGHTED"}</span></div><div className="raid-player-boards">{state.players.map((player,index) => {const own=player.id===state.youId;const board=boardFor(player);return <section key={player.id} className={`raid-player-board ${own ? "your-board" : "ally-board"}`}><header><div><strong>PLAYER {index+1} · {own ? "YOU" : player.name.toUpperCase()}</strong><small>{own ? "YOUR BOARD · CONTROLS UNLOCKED" : "ALLY BOARD · LOCKED TO OWNER"}</small></div><span>{board.filter(Boolean).length}/6 deployed</span></header><div className="raid-player-grid">{Array.from({length:9},(_,slot) => {const unit=board[slot];const selected=own && moveSource===slot;const emptyTarget=own && battleTarget?.mode==="empty" && !unit;const disabled=moving ? !own || (moveSource===null ? !unit : false) : battleTarget?.mode==="empty" ? !emptyTarget : !active || !own || !unit || Boolean(me?.team?.used?.includes(unit.id));return <button key={slot} className={`raid-slot ${unit ? own ? "own-slot" : "ally-slot" : "vacant"} ${selected ? "move-source" : ""} ${emptyTarget ? "targetable" : ""} ${unit ? isAnimated(unit.id) : ""}`} onClick={() => moving ? own ? reposition(slot) : undefined : emptyTarget ? chooseEmptyTarget(slot) : own && unit ? battleTarget?.mode==="ally" ? chooseAllyTarget(unit) : chooseCombatCard(unit) : undefined} disabled={disabled}>{unit ? <><CardImage src={unit.image} alt={unit.name}/><b>{unit.name}</b><small>{own ? `${unit.hp}/${unit.max} HP · YOUR CARD` : `${unit.hp}/${unit.max} HP · ALLY CARD`}</small>{own && active && unit.abilityUses>0 && !me?.team?.usedAbilities?.includes(unit.id) ? <span className="raid-ability-chip" role="button" tabIndex={0} onClick={(event) => { event.stopPropagation(); useAbility(unit.id); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); useAbility(unit.id); } }}>ABILITY</span> : null}{animation?.targetId===unit.id && animation.damage ? <em className="raid-damage-pop">-{animation.damage}</em> : null}</> : <span>SPACE {slot+1}</span>}</button>;})}</div><div className="raid-board-backups"><strong>BACKUPS · {player.team?.backups.length || 0} REMAIN</strong>{own ? <span>{player.team?.backups.length ? player.team.backups.map((unit) => unit.name).join(" · ") : "None"}</span> : <span>Hidden from opponent</span>}</div></section>;})}</div></section>
+        <section className="quintesson-raid-board raid-boss-panel"><div className="raid-board-title"><div><p>VERDICT CHAMBER</p><h2>Quintesson Court</h2></div><span>{state.bossBoard.filter(Boolean).length}/6 COURT SPACES OCCUPIED</span></div><div className="raid-judge-space"><button className={`raid-judge-card ${isAnimated(state.judge.id)}`} onClick={() => attack(state.judge.id)} disabled={!active || (!attacker && !abilitySource && !battleTarget)}><CardImage src={state.judge.image} alt={state.judge.name}/><div><strong>{state.judge.name}</strong><span>{state.judge.hp}/{state.judge.max} HP · {state.judge.dmg} DMG</span><small>{state.judge.ability}</small></div>{animation?.targetId===state.judge.id && animation.damage ? <em className="raid-damage-pop">-{animation.damage}</em> : null}</button></div><div className="raid-boss-board">{state.bossBoard.map((unit,slot) => <button key={slot} className={`raid-boss-slot ${unit ? isAnimated(undefined,slot) : "vacant"} ${battleTarget?.mode==="boss" || abilitySource ? "targetable" : ""}`} onClick={() => unit && attack(undefined,slot)} disabled={!active || (!attacker && !abilitySource && !battleTarget) || !unit} aria-label={`Court space ${slot+1}${unit?.hidden===false ? ` · ${unit.name}` : " · Hidden Quintesson troop"}`}>{unit ? unit.hidden===false && unit.image ? <><CardImage src={unit.image} alt={unit.name || "Revealed Quintesson troop"}/><strong>{unit.name}</strong><span>{unit.hp}/{unit.max} HP · {unit.dmg} DMG</span><small>{unit.ability}</small>{animation?.targetSlot===slot && animation.damage ? <em className="raid-damage-pop">-{animation.damage}</em> : null}</> : <><span className="raid-hidden-card-back">?</span><span>COURT SPACE {slot+1}</span><small>Occupied cardback</small>{animation?.targetSlot===slot && animation.damage ? <em className="raid-damage-pop">-{animation.damage}</em> : null}</> : <span>EMPTY COURT SPACE</span>}</button>)}</div></section>
       </section>
-      <section className="raid-battle-panel"><div><h2>Shared Battle Cards</h2><p>One card is drawn at the start of each round. Either player may play it, but only once across both player turns.</p></div><div className="raid-shared-hand">{state.battleHand.length ? state.battleHand.map((card,index) => <button key={`${card}-${index}`} disabled={!active || state.battlePlayed} onClick={() => useBattleCard(card)} title={battleCards[card]?.effect}>{battleCards[card]?.image ? <CardImage src={battleCards[card].image} alt={card}/> : <span className="raid-card-placeholder">AMBUSH<br/>TRAP</span>}<b>{card}</b><small>{battleCards[card]?.effect}</small></button>) : <span className="raid-message">No shared Battle Cards remain in hand.</span>}</div><p className="raid-card-status">{state.battlePlayed ? "SHARED CARD USED THIS ROUND" : active ? "SHARED CARD READY" : "WAITING FOR ACTIVE PLAYER"}</p></section>
+      <section className="raid-battle-panel"><div className="raid-battle-tools"><div><h2>Shared Battle Cards</h2><p>One card is drawn at the start of each round. Either player may play it, but only once across both player turns.</p>{battleTarget ? <p className="raid-battle-targeting">{battleTarget.name}: {battleTarget.mode==="ally" ? "choose one of your characters" : battleTarget.mode==="empty" ? "choose an empty space on your board" : "choose a boss target"}.</p> : null}{battleTarget?.name==="War Dawn" ? <div className="raid-row-choices"><button onClick={() => chooseBattleRow(0)} disabled={!active || state.battlePlayed}>STRIKE COURT ROW 1</button><button onClick={() => chooseBattleRow(1)} disabled={!active || state.battlePlayed}>STRIKE COURT ROW 2</button></div> : null}</div><div className="raid-backup-area"><h3>Your Backups</h3><div className="raid-backup-cards">{me?.team?.backups?.length ? me.team.backups.map((unit) => <article key={unit.id} className="raid-backup-card"><CardImage src={unit.image} alt={unit.name}/><b>{unit.name}</b><small>{unit.hp}/{unit.max} HP</small>{active && unit.id==="galvatron" && unit.abilityUses>0 && !me.team?.usedAbilities?.includes(unit.id) ? <span className="raid-ability-chip" role="button" tabIndex={0} onClick={() => useAbility(unit.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); useAbility(unit.id); } }}>ABILITY</span> : null}</article>) : <span className="raid-message">No backups remaining.</span>}</div></div></div><div className="raid-shared-hand">{state.battleHand.length ? state.battleHand.map((card,index) => <button key={`${card}-${index}`} className={battleTarget?.name===card ? "selected" : ""} disabled={!active || state.battlePlayed} onClick={() => selectBattleCard(card)} title={battleCards[card]?.effect}>{battleCards[card]?.image ? <CardImage src={battleCards[card].image} alt={card}/> : <span className="raid-card-placeholder">AMBUSH<br/>TRAP</span>}<b>{card}</b><small>{battleCards[card]?.effect}</small></button>) : <span className="raid-message">No shared Battle Cards remain in hand.</span>}</div><p className="raid-card-status">{state.battlePlayed ? "SHARED CARD USED THIS ROUND" : active ? "SHARED CARD READY" : "WAITING FOR ACTIVE PLAYER"}</p></section>
       {active && state.stage === "combat" ? <button className="primary raid-end" onClick={() => socket?.emit("raid-end-turn")}>End attack turn</button> : null}
       {state.stage === "reposition" && moving ? <button className="primary raid-end" onClick={() => { setMoveSource(null); setMessage("Reposition skipped. Waiting for your ally."); socket?.emit("raid-skip-reposition"); }}>Skip reposition</button> : null}
       {finished ? <section className="raid-result"><h2>{state.stage === "victory" ? "The Judge has been overruled." : "The Tribunal has defeated both teams."}</h2><Link className="primary" href="/">Return to main menu</Link></section> : null}

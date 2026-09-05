@@ -28,9 +28,11 @@ Character Card border history:
 - Boss Rush board update: Boss Rush Obelisk, a deep-plum courtroom palette with gold obelisk lighting, red verdict signals and concentric tribunal rings.
 - Twin-board concealment update: Quintesson Eclipse, a midnight tribunal palette with cyan verdict light, violet seal accents and diagonal court-grid geometry.
 - Hidden-AI viewport update: Quintesson Abyss, a deep blue tribunal-depth palette with cyan scanlines, violet undertow lighting and submerged grid geometry.
+- Boss Rush interaction update: Quintesson Archive, an amber archival courtroom with parchment-gold grid lines, oxblood seals and catalog-console surfaces.
 - Settings and modal update: Nemesis Flight Deck, a black-and-purple warship interior theme with green status lighting, diagonal deck markings and heavy shadowed panels.
 - Exact modal-centering update: Metroplex Grid, a dark steel city-grid theme with turquoise infrastructure lighting, orange transit accents and squared mechanical surfaces.
 - Online co-op Raid update: Tribunal Shackle, an asymmetrical bronze restraint frame with luminous verdict seals, clamped corners and a heavy mechanical silhouette.
 - Boss Rush board update: Quintesson Seal, a gold-and-oxblood seal frame with radial corner marks and an angular four-point verdict stamp.
 - Twin-board concealment update: Verdict Crown, a cyan-and-violet crown frame with raised crest geometry, lower verdict gems and a cool tribunal glow.
 - Hidden-AI viewport update: Judicial Etching, a slate-cyan etched frame with alternating corner cuts, dashed inner rulings and a cool violet court glow.
+- Boss Rush interaction update: Prosecutor Ledger, a brass ledger frame with clipped filing tabs, ruled-paper highlights and an oxblood docket glow.

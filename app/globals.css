@@ -274,3 +274,38 @@ html[data-theme="quintesson-abyss"]{--bg:#04070d;--surface:#101a26;--surface2:#1
 html[data-theme="quintesson-abyss"] body{background-color:var(--bg);background-image:radial-gradient(ellipse at 50% -10%,#55d5ff21 0 3px,transparent 4px 80px,#6b3fa01a 82px 85px,transparent 87px),linear-gradient(160deg,transparent 0 46%,#55d5ff08 47% 48%,transparent 49% 100%),repeating-linear-gradient(90deg,transparent 0 46px,#6b3fa00b 47px 48px,transparent 49px 94px);background-size:320px 320px,100% 100%,188px 188px}
 html[data-theme="quintesson-abyss"] .stage-header,html[data-theme="quintesson-abyss"] .rail-panel,html[data-theme="quintesson-abyss"] .start-card,html[data-theme="quintesson-abyss"] .builder-head{border-color:#55d5ff77;box-shadow:inset 7px 0 #6b3fa0bb,inset -3px 0 #55d5ff66,0 22px 48px #000e}
 .app-shell[data-card-border="judicial-etching"]{--card-frame:#5c8b9c;--card-frame-2:#d3f5ff}.app-shell[data-card-border="judicial-etching"] .character-border-frame{border:4px solid #315a6b!important;border-radius:3px 17px 3px 17px!important;box-shadow:0 0 0 2px #071019,0 0 18px #55d5ff66,inset 0 0 15px #6b3fa044!important}.app-shell[data-card-border="judicial-etching"] .character-border-frame:before{inset:5px;border:1px dashed #d3f5ff;clip-path:polygon(0 0,35% 0,42% 5px,58% 5px,65% 0,100% 0,100% 35%,calc(100% - 5px) 42%,calc(100% - 5px) 58%,100% 65%,100% 100%,65% 100%,58% calc(100% - 5px),42% calc(100% - 5px),35% 100%,0 100%,0 65%,5px 58%,5px 42%,0 35%)}.app-shell[data-card-border="judicial-etching"] .character-border-frame:after{inset:0;background:linear-gradient(90deg,#55d5ff 0 1px,transparent 1px 100%),linear-gradient(#6b3fa0 0 1px,transparent 1px 100%);background-size:100% 14px,14px 100%;opacity:.28;clip-path:inset(2px)}
+
+html[data-theme="quintesson-archive"]{--bg:#0b0a08;--surface:#211d16;--surface2:#30281c;--text:#fff2cf;--sub:#b9a982;--accent:#e9bb5c;--accent2:#7d3e2f;--danger:#ec5d47;--line:#7a6235;--glow:#e9bb5c55;color-scheme:dark}
+html[data-theme="quintesson-archive"] body{background-color:var(--bg);background-image:radial-gradient(circle at 50% 0,#e9bb5c20 0 2px,transparent 3px 54px,#7d3e2f16 56px 59px,transparent 61px),repeating-linear-gradient(0deg,transparent 0 31px,#e9bb5c09 32px 33px,transparent 34px 63px),repeating-linear-gradient(90deg,transparent 0 31px,#7d3e2f0b 32px 33px,transparent 34px 63px);background-size:260px 260px,128px 128px,128px 128px}
+html[data-theme="quintesson-archive"] .stage-header,html[data-theme="quintesson-archive"] .rail-panel,html[data-theme="quintesson-archive"] .start-card,html[data-theme="quintesson-archive"] .builder-head{border-color:#e9bb5c77;box-shadow:inset 7px 0 #7d3e2fbb,inset -3px 0 #e9bb5c66,0 20px 44px #000d}
+.app-shell[data-card-border="prosecutor-ledger"]{--card-frame:#735b3b;--card-frame-2:#f5d77d}.app-shell[data-card-border="prosecutor-ledger"] .character-border-frame{border:5px solid #5c4329!important;border-radius:2px 2px 18px 18px!important;box-shadow:0 0 0 2px #170f08,0 0 18px #e9bb5c66,inset 0 0 14px #7d3e2f44!important}.app-shell[data-card-border="prosecutor-ledger"] .character-border-frame:before{inset:5px;border:1px solid #f5d77d;clip-path:polygon(0 0,100% 0,100% 12px,calc(100% - 7px) 12px,calc(100% - 7px) 100%,7px 100%,7px 12px,0 12px)}.app-shell[data-card-border="prosecutor-ledger"] .character-border-frame:after{inset:0;background:repeating-linear-gradient(0deg,transparent 0 9px,#f5d77d22 10px 11px,transparent 12px 20px);opacity:.55;clip-path:inset(3px)}
+
+/* Boss Rush board flow: keep both allied formations stacked and the horizontal court beside them. */
+.raid-deployment-layout{max-width:1480px;margin:0 auto 15px;display:grid;grid-template-columns:minmax(0,1.25fr) minmax(320px,.75fr);gap:14px;align-items:start}
+.raid-deployment-layout .raid-player-boards{grid-template-columns:1fr;gap:8px}
+.raid-deployment-layout .raid-placement-hand{position:sticky;top:12px;margin:0}
+.raid-combat-page .raid-arena{grid-template-columns:minmax(0,1.08fr) minmax(360px,.92fr);align-items:stretch}
+.raid-combat-page .raid-player-boards{grid-template-columns:1fr;gap:8px}
+.raid-combat-page .raid-player-grid{grid-template-rows:repeat(3,minmax(64px,1fr))}
+.raid-combat-page .raid-player-grid .raid-slot{min-height:64px}
+.raid-combat-page .raid-player-grid .raid-slot img{min-height:50px}
+.raid-battle-panel{grid-template-columns:1fr;gap:10px}
+.raid-battle-tools{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(280px,.9fr);gap:12px;align-items:start}
+.raid-battle-targeting{margin-top:8px!important;color:var(--raid-acid)!important;font-weight:800}
+.raid-row-choices{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+.raid-row-choices button{padding:7px 9px;border:1px solid var(--raid-line);background:#0a100b;color:#e9f2d2;cursor:pointer;font-size:.66rem;font-weight:800}
+.raid-row-choices button:hover:not(:disabled){border-color:var(--raid-acid);color:var(--raid-acid)}
+.raid-backup-area{padding:10px;background:#0b120d;border:1px solid #4c5b38}
+.raid-backup-area h3{margin:0 0 7px;color:var(--raid-acid);font-size:.7rem;letter-spacing:.1em;text-transform:uppercase}
+.raid-backup-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.raid-backup-card{position:relative;display:grid;gap:3px;min-width:0;padding:4px;background:#111a13;border:1px solid #425034;color:#f4f1dc}
+.raid-backup-card img{width:100%;aspect-ratio:546/768;object-fit:cover}
+.raid-backup-card b{font-size:.6rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.raid-backup-card small{color:#aab498;font-size:.53rem}
+.raid-ability-chip{display:inline-flex;align-items:center;justify-content:center;position:absolute;right:4px;top:4px;padding:3px 5px;background:#c5f45a;color:#10170d;border:1px solid #edffc1;border-radius:999px;font-size:.5rem;font-weight:900;letter-spacing:.06em;cursor:pointer;z-index:3}
+.raid-ability-chip:hover{filter:brightness(1.12);transform:translateY(-1px)}
+.raid-slot.targetable,.raid-boss-slot.targetable{border-color:var(--raid-acid)!important;box-shadow:0 0 16px #c5f45a66}
+.raid-shared-hand button.selected{border:2px solid var(--raid-acid);box-shadow:0 0 15px #c5f45a66}
+.raid-boss-slot .raid-hidden-card-back{margin-inline:auto}
+@media(max-width:1100px){.raid-deployment-layout{grid-template-columns:1fr}.raid-deployment-layout .raid-placement-hand{position:static}.raid-combat-page .raid-arena{grid-template-columns:1fr}.raid-battle-tools{grid-template-columns:1fr}}
+@media(max-width:700px){.raid-combat-page .raid-player-grid{grid-template-rows:repeat(3,minmax(56px,1fr))}.raid-combat-page .raid-player-grid .raid-slot{min-height:56px}.raid-backup-cards{grid-template-columns:repeat(3,1fr)}}

@@ -181,6 +181,7 @@ const themes = [
   ["boss-rush", "Boss Rush Obelisk"],
   ["quintesson-eclipse", "Quintesson Eclipse"],
   ["quintesson-abyss", "Quintesson Abyss"],
+  ["quintesson-archive", "Quintesson Archive"],
 ] as const;
 const cardBorders = [
   ["energon-edge", "Energon Edge"],
@@ -194,6 +195,7 @@ const cardBorders = [
   ["quintesson-seal", "Quintesson Seal"],
   ["verdict-crown", "Verdict Crown"],
   ["judicial-etching", "Judicial Etching"],
+  ["prosecutor-ledger", "Prosecutor Ledger"],
 ] as const;
 const activeAbilities = new Set([
   "eject",

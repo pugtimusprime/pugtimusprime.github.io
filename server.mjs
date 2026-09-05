@@ -47,15 +47,31 @@ function createRaidRoom(code) {
     code, players:new Map(), stage:"lobby", round:0, decks:new Map(), teams:new Map(), ready:new Set(),
     placementOrder:[], placementIndex:0, turnOrder:[], turnIndex:0, actions:2,
     judge:{...raidTemplates.judge}, bossBoard:[{...raidTemplates.bailiff},{...raidTemplates.prosecutor},{...raidTemplates.executor},null,null,null],
-    fallen:[], alliconSerial:0, log:["The Quintesson Tribunal awaits judgement."],
+    fallen:[], enemyDefeatPending:false, alliconSerial:0, log:["The Quintesson Tribunal awaits judgement."],
     battleDeck:makeBattleDeck(), battleHand:[], battlePlayed:false, repositions:new Map(), eventSeq:0,
-    markedTargetId:null,
+    markedTarget:null, bossIntel:new Map(), revealedBossSlots:new Set(), bossTacticianDisabledUntil:0, repositionBlockedUntil:0,
   };
 }
 function bossTroops(room) { return room.bossBoard.filter(Boolean); }
 function bossUnits(room) { return [room.judge, ...bossTroops(room)]; }
 function publicBossBoard(room) {
-  return room.bossBoard.map((unit, slot) => unit ? { slot, hidden: true, occupied: true } : null);
+  return room.bossBoard.map((unit, slot) => {
+    if (!unit) return null;
+    return room.revealedBossSlots.has(slot)
+      ? { ...unit, slot, hidden: false, occupied: true }
+      : { slot, hidden: true, occupied: true };
+  });
+}
+function publicRaidTeam(team, ownerId, viewerId) {
+  if (!team) return null;
+  const hiddenBackup = (index) => ({ id:"hidden-backup-" + ownerId + "-" + index, name:"Hidden Backup", faction:"Autobot", role:"Scout", max:1, hp:1, dmg:0, image:"", ability:"", abilityUses:0, canAttack:false });
+  return {
+    ...team,
+    backups: viewerId===ownerId ? team.backups : team.backups.map((_,index)=>hiddenBackup(index)),
+    // Pending cards are shared during deployment so either player can follow the
+    // alternating placement order; only the private backup identities stay hidden.
+    pending: team.pending,
+  };
 }
 function raidPublic(room, viewer) {
   return {
@@ -63,7 +79,7 @@ function raidPublic(room, viewer) {
     activeId:room.stage === "combat" ? room.turnOrder[room.turnIndex] || null : null,
     placementActiveId:room.stage === "deployment" ? room.placementOrder[room.placementIndex] || null : null,
     actions:room.actions, repositions:Object.fromEntries(room.repositions),
-    players:[...room.players.values()].map(p=>({...p,ready:room.ready.has(p.id),team:room.teams.get(p.id)||null})),
+    players:[...room.players.values()].map(p=>({...p,ready:room.ready.has(p.id),team:publicRaidTeam(room.teams.get(p.id),p.id,viewer)})),
     judge:room.judge, boss:[room.judge], bossBoard:publicBossBoard(room),
     battleHand:room.battleHand, battlePlayed:room.battlePlayed, log:room.log.slice(-30), eventSeq:room.eventSeq,
   };
@@ -87,14 +103,27 @@ function drawRaidCards(room, amount=1) {
     if(card) room.battleHand.push(card);
   }
 }
-function raidTargetCandidates(room) {
+function raidIntel(room, playerId) {
+  if (!room.bossIntel.has(playerId)) room.bossIntel.set(playerId, { occupied:new Set(), empty:new Set() });
+  return room.bossIntel.get(playerId);
+}
+function raidTargetCandidates(room, includeUnknown=false) {
   const candidates=[];
   for(const [playerId,team] of room.teams) for(let slot=0;slot<team.board.length;slot++) {
-    const unit=team.board[slot]; if(unit?.hp>0) candidates.push({playerId,unit,slot});
+    const unit=team.board[slot], intel=raidIntel(room,playerId);
+    if (includeUnknown) {
+      if (team.hiddenSpaces?.includes(slot)) continue;
+      if (intel.empty.has(slot)) continue;
+      candidates.push({playerId,unit:unit?.hp>0?unit:null,slot,hidden:true,known:intel.occupied.has(slot)});
+    } else if(unit?.hp>0) candidates.push({playerId,unit,slot});
   }
   return candidates;
 }
 function raidUtility(candidate, damage) {
+  if (candidate.hidden) {
+    const centrality=candidate.known&&candidate.slot%3===1?8:0;
+    return (candidate.known?130:45) + damage*8 + centrality;
+  }
   const remaining=Math.max(0,candidate.unit.hp-damage);
   return (remaining===0?10000:0) + damage*20 + (candidate.unit.max-remaining)*2;
 }
@@ -105,13 +134,17 @@ function minimaxRaidTarget(candidates, attacker, depth=2) {
     if(!options.length) return -Infinity;
     if(remaining<=0) return maximizing ? Math.max(...options.map((c)=>raidUtility(c,damage))) : Math.min(...options.map((c)=>raidUtility(c,damage)));
     const scores=options.map((candidate)=>{
-      const next=options.filter((entry)=>entry!==candidate || candidate.unit.hp>damage);
+      const survives=candidate.hidden || candidate.unit.hp>damage;
+      const next=options.filter((entry)=>entry!==candidate || survives);
       const immediate=raidUtility(candidate,damage);
       return maximizing ? immediate + 0.25*search(next,remaining-1,false) : immediate - 0.25*search(next,remaining-1,true);
     });
     return maximizing ? Math.max(...scores) : Math.min(...scores);
   };
-  return candidates.map((candidate)=>({candidate,score:raidUtility(candidate,damage)+0.25*search(candidates.filter((entry)=>entry!==candidate),depth-1,false)})).sort((a,b)=>b.score-a.score)[0].candidate;
+  const scored=candidates.map((candidate)=>({candidate,score:raidUtility(candidate,damage)+0.25*search(candidates.filter((entry)=>entry!==candidate),depth-1,false)}));
+  const best=Math.max(...scored.map((entry)=>entry.score));
+  const tied=scored.filter((entry)=>Math.abs(entry.score-best)<0.001);
+  return tied[Math.floor(Math.random()*tied.length)]?.candidate || scored[0].candidate;
 }
 function hiddenCourtSnapshot(board) {
   return board.map((unit, slot) => unit ? {
@@ -171,6 +204,7 @@ function moveBossMinimax(room) {
     if(best.from<0 || best.to<0) break;
     [room.bossBoard[best.from],room.bossBoard[best.to]]=[room.bossBoard[best.to],room.bossBoard[best.from]];
   }
+  room.revealedBossSlots.clear();
   room.log.push("The Quintesson court repositioned two spaces.");
   raidEvent(room,{kind:"reposition",side:"boss"});
 }
@@ -198,39 +232,75 @@ function reinforceRaidTeam(room,team,slot) {
   team.board[slot]=replacement;
   room.log.push(`${replacement.name} reinforced its owner's 3 x 3 board.`);
 }
+function recordBossIntel(room, target) {
+  const intel=raidIntel(room,target.playerId);
+  if (target.unit?.hp>0) {
+    intel.occupied.add(target.slot);
+    intel.empty.delete(target.slot);
+  } else {
+    intel.empty.add(target.slot);
+    intel.occupied.delete(target.slot);
+  }
+}
 function raidBossTurn(room) {
   room.stage="boss"; emitRaid(room);
   summonOrRevive(room);
-  const candidates=raidTargetCandidates(room);
+  for (let slot=0; slot<room.bossBoard.length; slot++) {
+    const poisoned=room.bossBoard[slot];
+    if (!poisoned?.raidPoison) continue;
+    poisoned.hp=Math.max(0,poisoned.hp-5);
+    poisoned.raidPoison=Math.max(0,poisoned.raidPoison-1);
+    if (poisoned.hp===0) defeatRaidBossUnit(room,{unit:poisoned,slot});
+  }
+  const candidates=raidTargetCandidates(room,true);
   const prosecutor=bossTroops(room).find((unit)=>unit.id==="quintesson-prosecutor"&&unit.hp>0);
-  const marked=prosecutor?candidates.slice().sort((a,b)=>a.unit.hp-b.unit.hp)[0]:null;
-  room.markedTargetId=marked?.unit.id||null;
-  if(marked) room.log.push(`The Prosecutor marked ${marked.unit.name} for judgement.`);
+  const marked=prosecutor?minimaxRaidTarget(candidates,prosecutor,2):null;
+  room.markedTarget=marked?{playerId:marked.playerId,slot:marked.slot}:null;
+  if(marked) room.log.push("The Prosecutor marked a concealed player position for judgement.");
   for(const attacker of bossUnits(room).filter((unit)=>unit.hp>0)) {
-    const live=raidTargetCandidates(room); if(!live.length) break;
-    const chosen=attacker.id==="quintesson-prosecutor"&&marked?marked:minimaxRaidTarget(live,attacker,2);
+    if (attacker.role==="Tactician"&&room.bossTacticianDisabledUntil>=room.round) continue;
+    const live=raidTargetCandidates(room,true); if(!live.length) break;
+    const markedLive=marked&&live.find((entry)=>entry.playerId===marked.playerId&&entry.slot===marked.slot);
+    const chosen=attacker.id==="quintesson-prosecutor"&&markedLive?markedLive:minimaxRaidTarget(live,attacker,2);
     if(!chosen) continue;
+    if (!chosen.unit) {
+      recordBossIntel(room,chosen);
+      room.log.push(`${attacker.id==="quintesson-judge"?attacker.name:"A hidden Quintesson troop"} searched player space ${chosen.slot+1} and missed.`);
+      raidEvent(room,{kind:"miss",side:"boss",targetSlot:chosen.slot});
+      continue;
+    }
+    const targetTeam=room.teams.get(chosen.playerId);
+    if(targetTeam?.traps?.includes(chosen.slot)){
+      recordBossIntel(room,chosen);
+      targetTeam.traps=targetTeam.traps.filter((slot)=>slot!==chosen.slot);
+      room.log.push("An Ambush Trap cancelled the hidden Quintesson attack.");
+      raidEvent(room,{kind:"trap",side:"boss",targetSlot:chosen.slot});
+      continue;
+    }
     let damage=attacker.dmg;
-    if(room.markedTargetId===chosen.unit.id){damage+=10;room.markedTargetId=null;}
+    if(room.markedTarget&&room.markedTarget.playerId===chosen.playerId&&room.markedTarget.slot===chosen.slot){damage+=10;room.markedTarget=null;}
     if(attacker.id==="quintesson-executor"&&chosen.unit.hp<=chosen.unit.max/2) damage+=10;
     if(attacker.id.startsWith("allicon")) damage+=Math.min(10,bossTroops(room).filter((unit)=>unit.id.startsWith("allicon")&&unit.hp>0&&unit!==attacker).length*5);
+    if(targetTeam?.armorTargets?.includes(chosen.unit.id)){damage=Math.max(0,damage-10);targetTeam.armorTargets=targetTeam.armorTargets.filter((id)=>id!==chosen.unit.id);}
     chosen.unit.hp=Math.max(0,chosen.unit.hp-damage);
+    recordBossIntel(room,chosen);
     const attackerName = attacker.id === "quintesson-judge" ? attacker.name : "A hidden Quintesson troop";
     room.log.push(`${attackerName} struck ${chosen.unit.name} for ${damage}.`);
     raidEvent(room,{kind:"hit",attackerId:attacker.id === "quintesson-judge" ? attacker.id : undefined,targetId:chosen.unit.id,damage,side:"boss",defeated:chosen.unit.hp===0});
     if(chosen.unit.hp===0) {
-      const team=room.teams.get(chosen.playerId); team.board[chosen.slot]=null; reinforceRaidTeam(room,team,chosen.slot);
+      const team=room.teams.get(chosen.playerId); team.board[chosen.slot]=null; team.fallen=[...(team.fallen||[]),chosen.unit]; reinforceRaidTeam(room,team,chosen.slot);
     }
   }
   if([...room.teams.values()].every((team)=>livingRaidUnits(team).length===0)){room.stage="defeat";room.log.push("Both player teams were defeated.");emitRaid(room);return;}
-  moveBossMinimax(room);
+  if(room.repositionBlockedUntil===room.round) room.log.push("Rattrap prevented the Quintesson court from repositioning.");
+  else moveBossMinimax(room);
   room.repositions=new Map([...room.players.keys()].map((id)=>[id,1]));
   room.stage="reposition"; room.actions=0; emitRaid(room);
 }
 function startRaidRound(room) {
   room.round += 1; room.stage="combat"; room.turnIndex=0; room.repositions.clear(); room.turnOrder.reverse();
   if(!room.turnOrder.length) room.turnOrder=[...room.players.keys()];
-  room.actions=2; room.battlePlayed=false; drawRaidCards(room,1); room.teams.forEach((team)=>{team.used=[];}); emitRaid(room);
+  room.actions=2; room.battlePlayed=false; drawRaidCards(room,1); room.teams.forEach((team)=>{team.used=[];team.usedAbilities=[];team.faceOff=false;team.traps=[];team.hiddenSpaces=[];}); emitRaid(room);
 }
 function completeRaidReposition(room) {
   if([...room.repositions.values()].some((moves)=>moves>0)) return;
@@ -242,12 +312,38 @@ function findBossTarget(room, id, targetSlot) {
   const unit = room.bossBoard[targetSlot];
   return unit?.hp > 0 ? { unit, slot: targetSlot } : null;
 }
-function findPlayerUnit(room, id) {
+function findPlayerUnit(room, id, ownerId) {
   for (const [playerId, team] of room.teams) {
+    if (ownerId && playerId!==ownerId) continue;
     const slot = team.board.findIndex((unit) => unit?.id === id && unit.hp > 0);
     if (slot >= 0) return { playerId, team, unit: team.board[slot], slot };
   }
   return null;
+}
+function raidAttackDamage(room, team, attacker, slot) {
+  let damage=attacker.dmg;
+  if (attacker.id==="bee" && team.board.some((unit)=>unit?.faction==="Autobot"&&unit.role==="Commander")) damage+=5;
+  if (team.board.some((unit,index)=>unit?.id==="quickstrike"&&Math.floor(index/3)===Math.floor(slot/3))) damage+=5;
+  if (attacker.raidWheeljackBoost) { damage+=5; attacker.raidWheeljackBoost=false; }
+  if (attacker.id==="optimal"&&team.board.some((unit)=>unit?.id==="primal"||unit?.id==="optimus")) damage=30;
+  if (team.reflectionDamage>0) { damage=team.reflectionDamage; team.reflectionDamage=0; }
+  return damage;
+}
+function resolveBossDamage(room, target, damage) {
+  const adjusted=target.unit.id===room.judge.id&&bossTroops(room).some((unit)=>unit.id==="quintesson-bailiff"&&unit.hp>0) ? Math.ceil(damage/2) : damage;
+  target.unit.hp=Math.max(0,target.unit.hp-adjusted);
+  return adjusted;
+}
+function defeatRaidBossUnit(room, target) {
+  if (target.unit.id==="quintesson-judge") {
+    room.stage="victory";
+    room.log.push("The Quintesson Judge has fallen. Raid victory!");
+    return;
+  }
+  room.bossBoard[target.slot]=null;
+  room.fallen.push(target.unit);
+  room.enemyDefeatPending=true;
+  room.revealedBossSlots.delete(target.slot);
 }
 function detachRaid(socket) {
   const code = socket.data.raidCode;
@@ -546,7 +642,8 @@ io.on("connection", (socket) => {
     const units=legalRaidDeck(ids);
     if(!units)return reply({ok:false,error:"Submit nine unique characters with 2 Commanders, 3 Scouts, 2 Troopers and 2 Tacticians."});
     room.decks.set(socket.id,ids);
-    room.teams.set(socket.id,{board:Array(9).fill(null),backups:units.slice(6),pending:units.slice(0,6),used:[]});
+    room.teams.set(socket.id,{board:Array(9).fill(null),backups:units.slice(6),pending:units.slice(0,6),used:[],usedAbilities:[],faceOff:false,armor:0,traps:[],hiddenSpaces:[]});
+    room.bossIntel.set(socket.id,{occupied:new Set(),empty:new Set()});
     reply({ok:true});
     if(room.decks.size===2){
       room.stage="deployment"; room.placementOrder=[...room.players.keys()]; room.placementIndex=0;
@@ -571,45 +668,128 @@ io.on("connection", (socket) => {
   socket.on("raid-attack",({attackerId,targetId,targetSlot}={},reply=()=>{})=>{
     const room=raidRooms.get(socket.data.raidCode),team=room?.teams.get(socket.id);
     if(!room||room.stage!=="combat"||room.turnOrder[room.turnIndex]!==socket.id||room.actions<=0)return reply({ok:false,error:"It is not your attack turn."});
-    const attacker=team?.board.find((unit)=>unit?.id===attackerId&&unit.hp>0),target=findBossTarget(room,targetId,targetSlot);
+    const attackerSlot=team?.board.findIndex((unit)=>unit?.id===attackerId&&unit.hp>0) ?? -1;
+    const attacker=attackerSlot>=0?team.board[attackerSlot]:null,target=findBossTarget(room,targetId,targetSlot);
     if(!attacker||!target)return reply({ok:false,error:"Choose one of your characters and a living boss card."});
     if((team.used||[]).includes(attacker.id))return reply({ok:false,error:"That character already attacked this turn."});
-    let damage=attacker.dmg;
-    if(target.unit.id==="quintesson-judge"&&bossTroops(room).some((unit)=>unit.id==="quintesson-bailiff"&&unit.hp>0))damage=Math.ceil(damage/2);
-    target.unit.hp=Math.max(0,target.unit.hp-damage); team.used=[...(team.used||[]),attacker.id]; room.actions--;
+    let damage=raidAttackDamage(room,team,attacker,attackerSlot);
+    damage=resolveBossDamage(room,target,damage);
+    team.used=[...(team.used||[]),attacker.id]; room.actions--;
     const targetName = target.unit.id === room.judge.id ? target.unit.name : "a hidden Quintesson troop";
     room.log.push(`${attacker.name} dealt ${damage} to ${targetName}.`);
     raidEvent(room,{kind:"hit",attackerId:attacker.id,targetId:target.unit.id===room.judge.id?target.unit.id:undefined,targetSlot:target.unit.id===room.judge.id?undefined:target.slot,damage,side:"players",defeated:target.unit.hp===0});
-    if(target.unit.hp===0){
-      if(target.unit.id==="quintesson-judge"){room.stage="victory";room.log.push("The Quintesson Judge has fallen. Raid victory!");}
-      else {room.bossBoard[target.slot]=null;room.fallen.push(target.unit);}
-    }
+    if(target.unit.hp===0) defeatRaidBossUnit(room,target);
+    if(team.faceOff && target.unit.hp>0) { team.faceOff=false; drawRaidCards(room,1); room.log.push("Face Off drew one shared Battle Card after a successful hit."); }
     reply({ok:true}); emitRaid(room);
   });
   socket.on("raid-play-battle",({name,targetId,targetSlot,row}={},reply=()=>{})=>{
     const room=raidRooms.get(socket.data.raidCode),team=room?.teams.get(socket.id);
-    if(!room||room.stage!=="combat"||room.turnOrder[room.turnIndex]!==socket.id||room.battlePlayed)return reply({ok:false,error:"Only one shared Battle Card can be played across both player turns."});
+    if(!room||!team||room.stage!=="combat"||room.turnOrder[room.turnIndex]!==socket.id||room.battlePlayed||room.actions<=0)return reply({ok:false,error:"Only one shared Battle Card can be played during an active player turn."});
     const cardIndex=room.battleHand.indexOf(name);
     if(cardIndex<0)return reply({ok:false,error:"That Battle Card is not in the shared hand."});
-    room.battleHand.splice(cardIndex,1);room.battlePlayed=true;
+    const ownTarget=targetId?findPlayerUnit(room,targetId,socket.id):null;
+    const bossTarget=Number.isInteger(targetSlot)&&targetSlot>=0?findBossTarget(room,undefined,targetSlot):null;
+    const amount=name==="Power Of The Primes"?35:10;
     let effect=`${name} resolved.`;
     if(name==="Roll Out"||name==="Power Of The Primes"){
-      const target=findPlayerUnit(room,targetId)||raidTargetCandidates(room).sort((a,b)=>a.unit.hp-b.unit.hp)[0];
-      if(target){const amount=name==="Power Of The Primes"?35:10;target.unit.hp=Math.min(target.unit.max,target.unit.hp+amount);effect=`${target.unit.name} healed ${amount}.`;}
+      const target=ownTarget||raidTargetCandidates(room).filter((entry)=>entry.playerId===socket.id).sort((a,b)=>a.unit.hp-b.unit.hp)[0];
+      if(!target)return reply({ok:false,error:"Choose one of your living characters."});
+      target.unit.hp=Math.min(target.unit.max,target.unit.hp+amount);effect=`${target.unit.name} healed ${amount}.`;
+    } else if(name==="Armor Plating"){
+      const target=ownTarget||raidTargetCandidates(room).filter((entry)=>entry.playerId===socket.id).sort((a,b)=>a.unit.hp-b.unit.hp)[0];
+      if(!target)return reply({ok:false,error:"Choose one of your living characters."});
+      team.armorTargets=[target.unit.id]; team.armor=10; effect=`${target.unit.name} gained Armor Plating for the next hit.`;
     } else if(name==="Deserved Punishment"){
-      const target=findBossTarget(room,targetId,targetSlot)||findBossTarget(room,room.judge.id); if(target){target.unit.hp=Math.max(0,target.unit.hp-10);const targetName=target.unit.id===room.judge.id?target.unit.name:"a hidden Quintesson troop";effect=`${targetName} took 10 damage.`;if(target.unit.hp===0&&target.unit.id==="quintesson-judge")room.stage="victory";}
+      const target=bossTarget||findBossTarget(room,room.judge.id); if(target){const damage=resolveBossDamage(room,target,10);const targetName=target.unit.id===room.judge.id?room.judge.name:"a hidden Quintesson troop";effect=`${targetName} took ${damage} damage.`;if(target.unit.hp===0)defeatRaidBossUnit(room,target);}
     } else if(name==="War Dawn"){
-      const chosenRow=Number.isInteger(row)?Math.max(0,Math.min(1,row)):0; for(let i=0;i<3;i++){const slot=chosenRow*3+i,unit=room.bossBoard[slot];if(unit)unit.hp=Math.max(0,unit.hp-15);} effect=`War Dawn hit Boss Court row ${chosenRow+1} for 15.`;
+      const chosenRow=Number.isInteger(row)?Math.max(0,Math.min(1,row)):0;
+      for(let i=0;i<3;i++){const slot=chosenRow*3+i,unit=room.bossBoard[slot];if(unit){unit.hp=Math.max(0,unit.hp-15);if(unit.hp===0)defeatRaidBossUnit(room,{unit,slot});}}
+      effect=`War Dawn hit Boss Court row ${chosenRow+1} for 15.`;
     } else if(name==="Reinforce"){
-      const replacement=team?.backups.shift(),slot=firstEmptyPlayerSlot(room,socket.id); if(replacement&&slot>=0){team.board[slot]=replacement;effect=`${replacement.name} reinforced your 3 x 3 board space ${slot+1}.`;}
+      const replacement=team.backups.shift(),slot=ownTarget?.slot??firstEmptyPlayerSlot(room,socket.id);
+      if(!replacement||slot<0)return reply({ok:false,error:"You need a Backup and a deployed target or empty space."});
+      if(ownTarget)team.backups.push(team.board[slot]);
+      team.board[slot]=replacement;effect=`${replacement.name} reinforced your 3 x 3 board space ${slot+1}.`;
     } else if(name==="Tyrants Reign"){drawRaidCards(room,2);effect="Tyrants Reign drew two more shared Battle Cards.";}
+    else if(name==="Face Off"){team.faceOff=true;effect="Face Off armed your next successful attack to draw a shared Battle Card.";}
+    else if(name==="Flying Support"||name==="He Will Find You"||name==="Information Gathering"||name==="Surprise"||name==="2 For The Price Of 1"){
+      const occupied=room.bossBoard.map((unit,index)=>unit?index:-1).filter((index)=>index>=0);
+      let slots=[];
+      if(name==="He Will Find You") {
+        const lowest=occupied.filter((slot)=>!room.revealedBossSlots.has(slot)).sort((a,b)=>room.bossBoard[a].hp-room.bossBoard[b].hp)[0];
+        slots=lowest===undefined?occupied.slice(0,1):[lowest];
+      } else {
+        const revealCount=name==="Information Gathering"?3:name==="Surprise"?2:1;
+        slots=(Number.isInteger(targetSlot)?[targetSlot]:occupied.filter((slot)=>!room.revealedBossSlots.has(slot)).sort(()=>Math.random()-.5).slice(0,revealCount));
+      }
+      slots.forEach((slot)=>{if(room.bossBoard[slot])room.revealedBossSlots.add(slot);});
+      effect=name+" revealed "+slots.length+" court position"+(slots.length===1?"":"s")+".";
+      if(name==="2 For The Price Of 1") room.enemyDefeatPending=false;
+    } else if(name==="Junkion Scrap"){room.battleHand.splice(0,Math.min(3,room.battleHand.length));effect="Junkion Scrap removed three shared Battle Cards.";}
+    else if(name==="Ambush Trap"){
+      const trapSlot=Number.isInteger(targetSlot)&&targetSlot>=0&&targetSlot<9&&!team.board[targetSlot]
+        ? targetSlot : firstEmptyPlayerSlot(room,socket.id);
+      if(trapSlot<0)return reply({ok:false,error:"Choose an empty space on your own board for Ambush Trap."});
+      team.traps=[...(team.traps||[]),trapSlot];effect="Ambush Trap armed on your board space "+(trapSlot+1)+".";
+    } else if(name==="Dark Reflections"){team.reflectionDamage=Math.max(...room.fallen.map((unit)=>unit.dmg),0);effect="Dark Reflections armed the strongest defeated Quintesson Damage for your next attack.";}
+    // Battle Cards are a shared tactical interrupt; playing one does not consume
+    // the active player's two attack actions.
+    room.battleHand.splice(cardIndex,1);room.battlePlayed=true;
     room.log.push(effect);raidEvent(room,{kind:"battle",name,side:"players"});reply({ok:true});emitRaid(room);
+  });
+  socket.on("raid-use-ability",({sourceId,targetId,targetSlot}={},reply=()=>{})=>{
+    const room=raidRooms.get(socket.data.raidCode),team=room?.teams.get(socket.id);
+    if(!room||!team||room.stage!=="combat"||room.turnOrder[room.turnIndex]!==socket.id||room.actions<=0)return reply({ok:false,error:"Unique abilities can only be used during your active turn."});
+    const sourceSlot=team.board.findIndex((unit)=>unit?.id===sourceId&&unit.hp>0);
+    const source=sourceSlot>=0?team.board[sourceSlot]:team.backups.find((unit)=>unit.id===sourceId);
+    if(!source||source.abilityUses<=0||(team.usedAbilities||[]).includes(sourceId))return reply({ok:false,error:"That character has no unique ability use remaining this round."});
+    if(sourceSlot<0&&sourceId!=="galvatron")return reply({ok:false,error:"Deploy this character before using its unique ability."});
+    const target=findBossTarget(room,targetId,targetSlot);
+    let effect=source.name+" used its unique ability.";
+    if(sourceId==="shockwave"||sourceId==="bombshell"||sourceId==="head"||sourceId==="eject"||sourceId==="arachnia"){
+      if(!target && !(sourceId==="head" && Number.isInteger(targetSlot)&&targetSlot>=0&&targetSlot<room.bossBoard.length))return reply({ok:false,error:"Choose an occupied court space for that ability."});
+      if(sourceId==="head"&&!target){effect="Headstrong searched an empty court space and survived.";}
+      else if(sourceId==="shockwave"){const damage=resolveBossDamage(room,target,30);effect="Shockwave dealt "+damage+" damage to "+(target.unit.id===room.judge.id?room.judge.name:"a hidden Quintesson troop")+".";if(target.unit.hp===0)defeatRaidBossUnit(room,target);}
+      else if(sourceId==="bombshell"){const damage=resolveBossDamage(room,target,target.unit.dmg);effect="Bombshell forced the hidden target to take "+damage+" damage.";if(target.unit.hp===0)defeatRaidBossUnit(room,target);}
+      else if(sourceId==="head"){if(target.unit.id!==room.judge.id){defeatRaidBossUnit(room,target);if(sourceSlot>=0){team.board[sourceSlot]=null;team.fallen=[...(team.fallen||[]),source];reinforceRaidTeam(room,team,sourceSlot);}effect="Headstrong and a hidden Quintesson troop destroyed one another.";}else effect="Headstrong cannot destroy the Judge; the ability was spent.";}
+      else if(sourceId==="eject"){if(target.unit.role==="Scout"){const empty=firstEmptyPlayerSlot(room,socket.id);if(empty>=0){team.board[empty]=source;team.board[sourceSlot]=null;effect="Eject swapped into the guessed hidden Scout position.";}else effect="Eject found a hidden Scout, but your board was full.";}else effect="Eject guessed wrong; the hidden card was not a Scout.";}
+      else if(sourceId==="arachnia"){const row=Math.floor(target.slot/3);room.bossBoard.forEach((unit,index)=>{if(unit&&Math.floor(index/3)===row)unit.raidPoison=3;});effect="Black Arachnia poisoned Quintesson court row "+(row+1)+" for three boss turns.";}
+    } else if(sourceId==="getaway"){
+      const commander=team.board.find((unit)=>unit&&unit.role==="Commander"&&unit.id!==sourceId);
+      if(!commander)return reply({ok:false,error:"Getaway requires a deployed friendly Commander."});
+      source.copiedCommanderId=commander.id; effect="Getaway copied "+commander.name+" as its Commander ability.";
+    } else if(sourceId==="wheeljack"){
+      team.board.forEach((unit)=>{if(unit?.role==="Scout")unit.raidWheeljackBoost=true;});effect="Wheeljack empowered every deployed Scout's next attack.";
+    } else if(sourceId==="soundwave"){
+      if(!team.board.some((unit)=>unit?.id==="megatron"))return reply({ok:false,error:"Soundwave requires Megatron deployed."});
+      drawRaidCards(room,3);effect="Soundwave drew three shared Battle Cards.";
+    } else if(sourceId==="grapple"){
+      const amount=team.backups.filter((unit)=>unit.faction==="Autobot").length;drawRaidCards(room,amount);effect="Grapple drew "+amount+" shared Battle Card"+(amount===1?"":"s")+".";
+    } else if(sourceId==="rumble"){
+      if(!team.board.some((unit)=>unit?.id==="frenzy"))return reply({ok:false,error:"Rumble requires Frenzy deployed."});
+      drawRaidCards(room,1);effect="Rumble drew one shared Battle Card.";
+    } else if(sourceId==="highbrow"){room.bossTacticianDisabledUntil=room.round+3;effect="Highbrow disabled Quintesson Tactician abilities for three rounds.";}
+    else if(sourceId==="pmega"){for(let i=room.bossBoard.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[room.bossBoard[i],room.bossBoard[j]]=[room.bossBoard[j],room.bossBoard[i]];}room.revealedBossSlots.clear();effect="Pmega reordered the concealed court.";}
+    else if(sourceId==="wasp"){room.bossBoard.map((unit,index)=>unit?.role==="Scout"?index:-1).filter((index)=>index>=0).forEach((slot)=>room.revealedBossSlots.add(slot));effect="Waspinator revealed every detectable Quintesson Scout.";}
+    else if(sourceId==="bludgeon"){team.hiddenSpaces=[0,1,2];room.bossIntel.set(socket.id,{occupied:new Set(),empty:new Set()});effect="Bludgeon concealed three of your board spaces from the boss.";}
+    else if(sourceId==="cyclonus"){team.board.filter((unit)=>unit?.faction==="Decepticon").forEach((unit)=>{unit.hp=Math.min(unit.max,unit.hp+5);});effect="Cyclonus healed every Decepticon on your board by 5.";}
+    else if(sourceId==="overlord"){if(room.battleHand.length<4)return reply({ok:false,error:"Overlord requires four shared Battle Cards to scrap."});room.battleHand.splice(0,4);source.dmg=20;effect="Overlord scrapped four shared Battle Cards and reached 20 Damage.";}
+    else if(sourceId==="hoist"){const count=Math.max(1,room.battleHand.length);room.battleHand=[];drawRaidCards(room,count);effect="Hoist replaced the shared Battle Cards with random draws.";}
+    else if(sourceId==="galvatron"){if(sourceSlot>=0)return reply({ok:false,error:"Galvatron must be used from Backup."});team.armorTargets=team.board.filter(Boolean).slice(0,2).map((unit)=>unit.id);effect="Galvatron shielded two deployed characters for the next boss attacks.";}
+    else if(sourceId==="razor"){const backup=team.backups.shift();if(!backup)return reply({ok:false,error:"Razorclaw has no Backup to combine with."});source.max+=backup.max;source.hp+=backup.max;if(backup.id==="rampage")drawRaidCards(room,2);effect="Razorclaw combined with a hidden Backup and gained "+backup.max+" Health.";}
+    else if(sourceId==="rhinox"){const fallen=(team.fallen||[]).find((unit)=>unit.faction==="Maximal");if(!fallen)return reply({ok:false,error:"Rhinox has no defeated Maximal to revive."});team.fallen=team.fallen.filter((unit)=>unit.id!==fallen.id);team.backups.push({...fallen,hp:Math.ceil(fallen.max/2)});effect="Rhinox revived a defeated Maximal into Backup at half Health.";}
+    else if(sourceId==="rattrap"){room.repositionBlockedUntil=room.round;effect="Rattrap blocked repositioning this round.";}
+    else if(sourceId==="jhiaxus"){effect="Jhiaxus forced the Tribunal to expose its Backup count: "+team.backups.length+" remain.";}
+    source.abilityUses=Math.max(0,source.abilityUses-1);team.usedAbilities=[...(team.usedAbilities||[]),sourceId];room.actions--;
+    room.log.push(effect);raidEvent(room,{kind:"ability",name:source.name,side:"players"});reply({ok:true});emitRaid(room);
   });
   socket.on("raid-reposition",({unitId,from,to}={},reply=()=>{})=>{
     const room=raidRooms.get(socket.data.raidCode),team=room?.teams.get(socket.id);
     if(!room||room.stage!=="reposition"||(room.repositions.get(socket.id)||0)<=0)return reply({ok:false,error:"You have no Reposition move remaining."});
     if(!Number.isInteger(from)||!Number.isInteger(to)||from<0||from>=9||to<0||to>=9||team.board[from]?.id!==unitId)return reply({ok:false,error:"Choose one of your own cards and a valid space on your 3 x 3 board."});
-    [team.board[from],team.board[to]]=[team.board[to],team.board[from]];room.repositions.set(socket.id,0);room.log.push(`${room.players.get(socket.id)?.name||"Player"} used one Reposition move.`);raidEvent(room,{kind:"reposition",side:"players",playerId:socket.id});reply({ok:true});emitRaid(room);completeRaidReposition(room);
+    [team.board[from],team.board[to]]=[team.board[to],team.board[from]];
+    const intel=raidIntel(room,socket.id); [from,to].forEach((slot)=>{intel.occupied.delete(slot);intel.empty.delete(slot);});
+    room.repositions.set(socket.id,0);room.log.push(`${room.players.get(socket.id)?.name||"Player"} used one Reposition move.`);raidEvent(room,{kind:"reposition",side:"players",playerId:socket.id});reply({ok:true});emitRaid(room);completeRaidReposition(room);
   });
   socket.on("raid-skip-reposition",()=>{
     const room=raidRooms.get(socket.data.raidCode);
