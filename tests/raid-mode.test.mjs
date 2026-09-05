@@ -103,7 +103,7 @@ test("the Quintesson court has the approved Boss Rush board, stats and wording",
   }
 });
 
-test("Raid is a separate route with shared boards, battle cards and animations", () => {
+test("Raid is a separate route with twin boards, battle cards and animations", () => {
   const home = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
   const raid = readFileSync(new URL("../app/raid/page.tsx", import.meta.url), "utf8");
   const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
@@ -118,7 +118,10 @@ test("Raid is a separate route with shared boards, battle cards and animations",
   assert.match(css, /\.raid-shared-grid/);
   assert.match(css, /raid-hit-animation/);
   assert.match(server, /minimaxRaidTarget/);
+  assert.match(server, /minimaxHiddenCourtMove/);
+  assert.match(server, /hiddenCourtSnapshot/);
   assert.match(home, /minimaxEnemyTarget/);
+  assert.match(home, /enemyAiOccupied/);
 });
 
 test("Quick Match pairs the first two waiting players", async () => {

@@ -113,17 +113,63 @@ function minimaxRaidTarget(candidates, attacker, depth=2) {
   };
   return candidates.map((candidate)=>({candidate,score:raidUtility(candidate,damage)+0.25*search(candidates.filter((entry)=>entry!==candidate),depth-1,false)})).sort((a,b)=>b.score-a.score)[0].candidate;
 }
+function hiddenCourtSnapshot(board) {
+  return board.map((unit, slot) => unit ? {
+    slot, hidden:true, occupied:true, hp:unit.hp, max:unit.max,
+  } : null);
+}
+function hiddenCourtValue(board) {
+  return board.reduce((score, card, slot) => {
+    if (!card?.occupied) return score;
+    const health = Math.max(0, card.hp);
+    const centrality = slot % 3 === 1 ? 8 : 0;
+    // Hidden cards are still known to the boss as occupied threats, but their
+    // identity is deliberately absent from this evaluation state.
+    return score + 100 + health * 2 + centrality + (card.hidden ? 12 : 0);
+  }, 0);
+}
+function hiddenCourtThreat(board, slot, damage) {
+  return board.map((card, index) => {
+    if (index !== slot || !card?.occupied) return card;
+    const hp = Math.max(0, card.hp - damage);
+    return hp > 0 ? {...card, hp} : null;
+  });
+}
+function minimaxHiddenCourtMove(board, playerDamage, depth=2) {
+  const occupied = board.map((card,index)=>card ? index : -1).filter(index=>index>=0);
+  if (occupied.length < 2) return { from:-1, to:-1, score:hiddenCourtValue(board) };
+  const moves = [{from:-1,to:-1,board}];
+  for (const from of occupied) for (const to of occupied) if (from < to) {
+    const next=board.slice(); [next[from],next[to]]=[next[to],next[from]];
+    moves.push({from,to,board:next});
+  }
+  const search = (state, remaining, maximizing) => {
+    if (remaining <= 0) return hiddenCourtValue(state);
+    if (maximizing) {
+      return Math.max(...movesFor(state).map((move) => search(move.board, remaining - 1, false)));
+    }
+    const targets=state.map((card,index)=>card ? index : -1).filter(index=>index>=0);
+    if (!targets.length || playerDamage <= 0) return hiddenCourtValue(state);
+    return Math.min(...targets.map((slot) => search(hiddenCourtThreat(state, slot, playerDamage), remaining - 1, true)));
+  };
+  const movesFor = (state) => {
+    const slots=state.map((card,index)=>card ? index : -1).filter(index=>index>=0);
+    const options=[{from:-1,to:-1,board:state}];
+    for (const from of slots) for (const to of slots) if (from < to) {
+      const next=state.slice(); [next[from],next[to]]=[next[to],next[from]];
+      options.push({from,to,board:next});
+    }
+    return options;
+  };
+  return moves.map((move) => ({...move, score:search(move.board, depth - 1, false)})).sort((a,b)=>b.score-a.score)[0];
+}
 function moveBossMinimax(room) {
   for(let move=0;move<2;move++) {
-    const occupied=room.bossBoard.map((unit,index)=>unit?index:-1).filter(index=>index>=0);
-    if(occupied.length<2) break;
-    let best=[occupied[0],occupied[1]], bestScore=-Infinity;
-    for(const from of occupied) for(const to of occupied) if(from<to) {
-      const board=room.bossBoard.slice(); [board[from],board[to]]=[board[to],board[from]];
-      const score=board.reduce((sum,unit,index)=>sum+(unit?unit.hp+(index===0?5:0):0),0);
-      if(score>bestScore){bestScore=score;best=[from,to];}
-    }
-    [room.bossBoard[best[0]],room.bossBoard[best[1]]]=[room.bossBoard[best[1]],room.bossBoard[best[0]]];
+    const state=hiddenCourtSnapshot(room.bossBoard);
+    const playerDamage=Math.max(0,...raidTargetCandidates(room).map(({unit})=>unit.dmg));
+    const best=minimaxHiddenCourtMove(state,playerDamage,2);
+    if(best.from<0 || best.to<0) break;
+    [room.bossBoard[best.from],room.bossBoard[best.to]]=[room.bossBoard[best.to],room.bossBoard[best.from]];
   }
   room.log.push("The Quintesson court repositioned two spaces.");
   raidEvent(room,{kind:"reposition",side:"boss"});

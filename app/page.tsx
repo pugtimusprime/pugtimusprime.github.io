@@ -109,6 +109,7 @@ type Feedback = { text: string; tone: "good" | "bad" | "info"; key: number };
 type CardInspection =
   Unit | { name: string; image: string; effect: string; rarity: string };
 type Concealment = { spaces: number[]; until: number } | null;
+type HiddenAiKnowledge = { occupied: number[]; empty: number[] };
 type OnlineDeployment = { board: (Unit | null)[]; backups: Unit[] };
 type OnlineTurn = {
   round: number;
@@ -179,6 +180,7 @@ const themes = [
   ["verdict-engine", "Verdict Engine"],
   ["boss-rush", "Boss Rush Obelisk"],
   ["quintesson-eclipse", "Quintesson Eclipse"],
+  ["quintesson-abyss", "Quintesson Abyss"],
 ] as const;
 const cardBorders = [
   ["energon-edge", "Energon Edge"],
@@ -191,6 +193,7 @@ const cardBorders = [
   ["tribunal-shackle", "Tribunal Shackle"],
   ["quintesson-seal", "Quintesson Seal"],
   ["verdict-crown", "Verdict Crown"],
+  ["judicial-etching", "Judicial Etching"],
 ] as const;
 const activeAbilities = new Set([
   "eject",
@@ -936,24 +939,61 @@ function minimaxBoardValue(board: Slot[]) {
   return board.reduce((score, unit) => score + (unit ? unit.hp + (unit.hp <= unit.max / 2 ? 4 : 0) : 0), 0);
 }
 
-function minimaxEnemyTarget(board: Slot[], attacker: Unit, depth = 2) {
-  const apply = (current: Slot[], target: number) => current.map((unit, index) =>
-    index === target && unit ? { ...unit, hp: Math.max(0, unit.hp - attacker.dmg) } : unit,
-  );
-  const search = (current: Slot[], remaining: number, maximizing: boolean): number => {
-    const targets = current.map((unit, index) => unit ? index : -1).filter((index) => index >= 0);
-    if (!targets.length || remaining <= 0) return minimaxBoardValue(current);
-    const scores = targets.map((target) => {
-      const next = apply(current, target);
-      const immediate = minimaxBoardValue(next);
-      return immediate + (remaining > 1 ? search(next, remaining - 1, !maximizing) * 0.15 : 0);
+function minimaxEnemyTarget(
+  board: Slot[],
+  attacker: Unit,
+  depth = 2,
+  knowledge: HiddenAiKnowledge = { occupied: [], empty: [] },
+) {
+  // The enemy board is face-down, so the AI searches a belief state instead
+  // of reading the player's real units. Confirmed hits stay occupied,
+  // confirmed misses stay empty, and every other coordinate is an unknown
+  // possibility. This keeps minimax from cheating through hidden information.
+  const spaces = Array.from({ length: board.length }, (_, index) => index),
+    knownOccupied = new Set(knowledge.occupied),
+    knownEmpty = new Set(knowledge.empty),
+    unknown = () => spaces.filter((index) => !knownOccupied.has(index) && !knownEmpty.has(index)),
+    expectedOccupancy = () => {
+      const hidden = unknown();
+      return hidden.length ? Math.min(1, Math.max(0, 6 - knownOccupied.size) / hidden.length) : 0;
+    },
+    targetValue = (target: number) => {
+      const known = knownOccupied.has(target),
+        probability = known ? 1 : expectedOccupancy(),
+        centerBonus = target % 3 === 1 ? 7 : 0;
+      return probability * (attacker.dmg * 12 + 28) + centerBonus + (known ? 90 : 0);
+    };
+  const search = (occupied: Set<number>, empty: Set<number>, remaining: number, maximizing: boolean): number => {
+    const candidates = spaces.filter((index) => !empty.has(index));
+    if (!candidates.length || remaining <= 0) return occupied.size * 82 + (spaces.length - occupied.size - empty.size) * 58;
+    const scores = candidates.map((target) => {
+      const hit = new Set(occupied);
+      hit.add(target);
+      const miss = new Set(empty);
+      miss.add(target);
+      const hitScore = search(hit, empty, remaining - 1, !maximizing),
+        missScore = search(occupied, miss, remaining - 1, !maximizing),
+        probability = occupied.has(target) ? 1 : Math.min(1, Math.max(0, 6 - occupied.size) / Math.max(1, spaces.length - occupied.size - empty.size)),
+        score = targetValue(target) + (probability * hitScore + (1 - probability) * missScore) * 0.15;
+      return maximizing ? score : -score;
     });
-    return maximizing ? Math.min(...scores) : Math.max(...scores);
+    return maximizing ? Math.max(...scores) : Math.min(...scores);
   };
-  const targets = board.map((unit, index) => unit ? index : -1).filter((index) => index >= 0);
+  const targets = spaces.filter((index) => !knownEmpty.has(index));
   if (!targets.length) return -1;
   return targets
-    .map((target) => ({ target, score: (board[target]?.hp === attacker.dmg ? 10000 : 0) + (board[target]?.max || 0) - (board[target]?.hp || 0) + search(apply(board, target), depth - 1, false) * 0.15 }))
+    .map((target) => {
+      const hit = new Set(knownOccupied);
+      hit.add(target);
+      const miss = new Set(knownEmpty);
+      miss.add(target);
+      const probability = knownOccupied.has(target) ? 1 : expectedOccupancy(),
+        score = targetValue(target) + (
+          probability * search(hit, knownEmpty, depth - 1, false) +
+          (1 - probability) * search(knownOccupied, miss, depth - 1, false)
+        ) * 0.15;
+      return { target, score };
+    })
     .sort((a, b) => b.score - a.score)[0].target;
 }
 
@@ -979,6 +1019,8 @@ export default function Home() {
     [enemyRoster, setEnemyRoster] = useState<Unit[]>([]),
     [battleHand, setBattleHand] = useState<string[]>([]),
     [drawPile, setDrawPile] = useState<string[]>([]);
+  const [enemyAiOccupied, setEnemyAiOccupied] = useState<number[]>([]),
+    [enemyAiEmpty, setEnemyAiEmpty] = useState<number[]>([]);
   const [round, setRound] = useState(1),
     [actions, setActions] = useState(3),
     [repositions, setRepositions] = useState(2),
@@ -1597,6 +1639,8 @@ export default function Home() {
     setTacticianDisabledUntil(0);
     setEnemyConcealment(null);
     setFriendlyConcealment(null);
+    setEnemyAiOccupied([]);
+    setEnemyAiEmpty([]);
     setEnemyBackupsRevealed(false);
     flash(
       "Choose any six of your nine characters and place them on your grid.",
@@ -2957,13 +3001,18 @@ export default function Home() {
       return;
     }
     let pb = [...board],
+      aiOccupied = new Set(enemyAiOccupied),
+      aiEmpty = new Set(enemyAiEmpty),
       live = enemyBoard
         .map((x, i) => ({ x, i }))
         .filter((a): a is { x: Unit; i: number } => !!a.x)
         .sort((a, b) => b.x.dmg - a.x.dmg);
     for (let n = 0; n < 3 && live.length; n++) {
       const attacker = live[n % live.length],
-        target = minimaxEnemyTarget(pb, attacker.x, 2),
+        target = minimaxEnemyTarget(pb, attacker.x, 2, {
+          occupied: [...aiOccupied],
+          empty: [...aiEmpty],
+        }),
         beeBoost =
           attacker.x.faction === "Autobot" &&
           (attacker.x.id === "bee" || attacker.x.role === "Commander") &&
@@ -2978,7 +3027,18 @@ export default function Home() {
         { ...attacker.x, dmg: attacker.x.dmg + (beeBoost ? 5 : 0) },
         attacker.i,
       );
+      // Record only what the face-down attack can learn: this coordinate was
+      // occupied or empty. The identity and remaining Health stay concealed.
+      if (pb[target]) {
+        aiOccupied.add(target);
+        aiEmpty.delete(target);
+      } else {
+        aiEmpty.add(target);
+        aiOccupied.delete(target);
+      }
     }
+    setEnemyAiOccupied([...aiOccupied]);
+    setEnemyAiEmpty([...aiEmpty]);
     setBoard(pb);
     if (pb.filter(Boolean).length + backups.length === 0) {
       setWinner("Defeat — every character on your team has been defeated.");
@@ -3120,6 +3180,10 @@ export default function Home() {
     setBoard((current) => expireTimedShields(current, newRound));
     setEnemyBoard(eb);
     setEnemyBackups(moved.backups);
+    // Repositioning is secret: previously confirmed coordinates are no longer
+    // reliable once cards move, so start the next round with a fresh belief map.
+    setEnemyAiOccupied([]);
+    setEnemyAiEmpty([]);
     setBackups(bk);
     if (eb.filter(Boolean).length + moved.backups.length === 0) {
       setWinner("Victory — every enemy character has been defeated.");

@@ -243,3 +243,34 @@ html[data-theme="quintesson-eclipse"]{--bg:#060812;--surface:#111827;--surface2:
 html[data-theme="quintesson-eclipse"] body{background-color:var(--bg);background-image:radial-gradient(circle at 50% 7%,#61e6d420 0 2px,transparent 3px 75px,#bd477b16 77px 80px,transparent 82px),repeating-linear-gradient(135deg,transparent 0 37px,#61e6d409 38px 39px,transparent 40px 74px);background-size:300px 300px,150px 150px}
 html[data-theme="quintesson-eclipse"] .stage-header,html[data-theme="quintesson-eclipse"] .rail-panel,html[data-theme="quintesson-eclipse"] .start-card,html[data-theme="quintesson-eclipse"] .builder-head{border-color:#61e6d477;box-shadow:inset 6px 0 #bd477baa,inset -2px 0 #61e6d488,0 20px 46px #000d}
 .app-shell[data-card-border="verdict-crown"]{--card-frame:#4b7e8f;--card-frame-2:#a8fff0}.app-shell[data-card-border="verdict-crown"] .character-border-frame{border:5px solid #285263!important;border-radius:9px 9px 26px 26px!important;box-shadow:0 0 0 2px #071018,0 0 19px #61e6d477,inset 0 0 18px #bd477b33!important}.app-shell[data-card-border="verdict-crown"] .character-border-frame:before{inset:5px;border:1px solid #a8fff0;clip-path:polygon(0 10px,10px 10px,10px 0,28% 0,50% 8px,72% 0,calc(100% - 10px) 0,calc(100% - 10px) 10px,100% 10px,100% 100%,0 100%)}.app-shell[data-card-border="verdict-crown"] .character-border-frame:after{inset:0;background:radial-gradient(circle at 50% 7px,#a8fff0 0 3px,transparent 4px),radial-gradient(circle at 12px calc(100% - 10px),#bd477b 0 4px,transparent 5px),radial-gradient(circle at calc(100% - 12px) calc(100% - 10px),#bd477b 0 4px,transparent 5px);clip-path:none}
+
+/* Version 22: compact Boss Rush viewport and hidden-aware AI */
+.raid-combat-page .raid-arena{grid-template-columns:minmax(0,1.62fr) minmax(270px,.68fr);gap:10px}
+.raid-combat-page .raid-player-boards-panel{padding:11px}
+.raid-combat-page .raid-player-boards{gap:7px}
+.raid-combat-page .raid-player-board{padding:7px}
+.raid-combat-page .raid-player-grid{grid-template-rows:repeat(3,minmax(55px,1fr));gap:4px}
+.raid-combat-page .raid-player-grid .raid-slot{min-height:55px;padding:3px}
+.raid-combat-page .raid-player-grid .raid-slot img{min-height:43px}
+.raid-combat-page .raid-player-grid .raid-slot b{bottom:18px;font-size:.55rem}
+.raid-combat-page .raid-player-grid .raid-slot small{bottom:2px;font-size:.46rem}
+.raid-combat-page .raid-board-backups{margin-top:5px;padding-top:5px;font-size:.55rem}
+.raid-combat-page .raid-boss-panel{padding:10px}
+.raid-combat-page .raid-boss-panel .raid-judge-space{margin:6px auto}
+.raid-combat-page .raid-boss-panel .raid-judge-card{grid-template-columns:27% 1fr;gap:7px;padding:5px}
+.raid-combat-page .raid-boss-panel .raid-judge-card img{max-height:118px}
+.raid-combat-page .raid-boss-panel .raid-judge-card strong{margin:3px 0;font-size:.86rem}
+.raid-combat-page .raid-boss-panel .raid-judge-card span{font-size:.58rem}
+.raid-combat-page .raid-boss-panel .raid-judge-card small{margin-top:5px;font-size:.53rem;line-height:1.2}
+.raid-combat-page .raid-boss-panel .raid-boss-board{grid-template-rows:repeat(2,minmax(58px,1fr));gap:4px;padding:5px}
+.raid-combat-page .raid-boss-panel .raid-boss-slot{min-height:58px;padding:4px}
+.raid-combat-page .raid-hidden-card-back{width:27px;height:29px;margin-bottom:3px;font-size:.92rem}
+.raid-combat-page .raid-boss-panel .raid-boss-slot strong{font-size:.57rem}
+.raid-combat-page .raid-boss-panel .raid-boss-slot span,.raid-combat-page .raid-boss-panel .raid-boss-slot small{font-size:.47rem}
+@media(max-width:1100px){.raid-combat-page .raid-arena{grid-template-columns:1fr}.raid-combat-page .raid-boss-panel .raid-judge-space{max-width:520px}}
+@media(max-width:700px){.raid-combat-page .raid-player-grid{grid-template-rows:repeat(3,minmax(52px,1fr))}.raid-combat-page .raid-player-grid .raid-slot{min-height:52px}.raid-combat-page .raid-boss-panel .raid-boss-board{grid-template-rows:repeat(2,minmax(54px,1fr))}}
+
+html[data-theme="quintesson-abyss"]{--bg:#04070d;--surface:#101a26;--surface2:#17283a;--text:#e7f5ff;--sub:#8ea7b9;--accent:#55d5ff;--accent2:#6b3fa0;--danger:#ff617c;--line:#2d5c73;--glow:#55d5ff55;color-scheme:dark}
+html[data-theme="quintesson-abyss"] body{background-color:var(--bg);background-image:radial-gradient(ellipse at 50% -10%,#55d5ff21 0 3px,transparent 4px 80px,#6b3fa01a 82px 85px,transparent 87px),linear-gradient(160deg,transparent 0 46%,#55d5ff08 47% 48%,transparent 49% 100%),repeating-linear-gradient(90deg,transparent 0 46px,#6b3fa00b 47px 48px,transparent 49px 94px);background-size:320px 320px,100% 100%,188px 188px}
+html[data-theme="quintesson-abyss"] .stage-header,html[data-theme="quintesson-abyss"] .rail-panel,html[data-theme="quintesson-abyss"] .start-card,html[data-theme="quintesson-abyss"] .builder-head{border-color:#55d5ff77;box-shadow:inset 7px 0 #6b3fa0bb,inset -3px 0 #55d5ff66,0 22px 48px #000e}
+.app-shell[data-card-border="judicial-etching"]{--card-frame:#5c8b9c;--card-frame-2:#d3f5ff}.app-shell[data-card-border="judicial-etching"] .character-border-frame{border:4px solid #315a6b!important;border-radius:3px 17px 3px 17px!important;box-shadow:0 0 0 2px #071019,0 0 18px #55d5ff66,inset 0 0 15px #6b3fa044!important}.app-shell[data-card-border="judicial-etching"] .character-border-frame:before{inset:5px;border:1px dashed #d3f5ff;clip-path:polygon(0 0,35% 0,42% 5px,58% 5px,65% 0,100% 0,100% 35%,calc(100% - 5px) 42%,calc(100% - 5px) 58%,100% 65%,100% 100%,65% 100%,58% calc(100% - 5px),42% calc(100% - 5px),35% 100%,0 100%,0 65%,5px 58%,5px 42%,0 35%)}.app-shell[data-card-border="judicial-etching"] .character-border-frame:after{inset:0;background:linear-gradient(90deg,#55d5ff 0 1px,transparent 1px 100%),linear-gradient(#6b3fa0 0 1px,transparent 1px 100%);background-size:100% 14px,14px 100%;opacity:.28;clip-path:inset(2px)}

@@ -151,8 +151,12 @@ deals +10 to characters at half Health or lower, and additional Allicons gain up
 to +10 damage from their pack. The Judge begins at 700 Health and, at the start
 of each boss turn, revives one defeated Quintesson troop at half Health; if none
 are defeated, he places one Allicon, with no more than two Allicons on the
-board. Defeat the Judge to win. Both Solo and Boss Rush AI use minimax target
-selection so the opponent prioritizes meaningful threats.
+board. Defeat the Judge to win. The Boss Rush viewport keeps both compact 3×3
+player boards and the Judge's larger court panel visible together. Solo
+minimax targets a face-down belief state: it remembers only confirmed occupied
+or empty coordinates, forgets that knowledge after secret repositioning, and
+never reads concealed card identities. Boss Rush minimax similarly evaluates
+the court as anonymous hidden slots while retaining the boss's private rules.
 
 ## Development
 
