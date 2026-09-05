@@ -36,3 +36,5 @@ Character Card border history:
 - Twin-board concealment update: Verdict Crown, a cyan-and-violet crown frame with raised crest geometry, lower verdict gems and a cool tribunal glow.
 - Hidden-AI viewport update: Judicial Etching, a slate-cyan etched frame with alternating corner cuts, dashed inner rulings and a cool violet court glow.
 - Boss Rush interaction update: Prosecutor Ledger, a brass ledger frame with clipped filing tabs, ruled-paper highlights and an oxblood docket glow.
+- Boss Rush court-layout update: Verdict Observatory, a midnight observatory theme with gold star-rings, indigo court geometry and a measured tribunal-console palette.
+- Boss Rush court-layout update: Arbiter Crest, a blue-gold crest frame with four-way corner cuts, central seal light and a restrained judicial glow.

@@ -325,6 +325,9 @@ function raidAttackDamage(room, team, attacker, slot) {
   if (attacker.id==="bee" && team.board.some((unit)=>unit?.faction==="Autobot"&&unit.role==="Commander")) damage+=5;
   if (team.board.some((unit,index)=>unit?.id==="quickstrike"&&Math.floor(index/3)===Math.floor(slot/3))) damage+=5;
   if (attacker.raidWheeljackBoost) { damage+=5; attacker.raidWheeljackBoost=false; }
+  if (attacker.raidSignalBoost) { damage+=5; attacker.raidSignalBoost=false; }
+  if (attacker.raidRumbleBoost) { damage+=10; attacker.raidRumbleBoost=false; }
+  if (attacker.raidRampageBoost) { damage+=10; attacker.raidRampageBoost=false; }
   if (attacker.id==="optimal"&&team.board.some((unit)=>unit?.id==="primal"||unit?.id==="optimus")) damage=30;
   if (team.reflectionDamage>0) { damage=team.reflectionDamage; team.reflectionDamage=0; }
   return damage;
@@ -739,7 +742,7 @@ io.on("connection", (socket) => {
   });
   socket.on("raid-use-ability",({sourceId,targetId,targetSlot}={},reply=()=>{})=>{
     const room=raidRooms.get(socket.data.raidCode),team=room?.teams.get(socket.id);
-    if(!room||!team||room.stage!=="combat"||room.turnOrder[room.turnIndex]!==socket.id||room.actions<=0)return reply({ok:false,error:"Unique abilities can only be used during your active turn."});
+    if(!room||!team||room.stage!=="combat"||room.turnOrder[room.turnIndex]!==socket.id)return reply({ok:false,error:"Unique abilities can only be used during your active turn."});
     const sourceSlot=team.board.findIndex((unit)=>unit?.id===sourceId&&unit.hp>0);
     const source=sourceSlot>=0?team.board[sourceSlot]:team.backups.find((unit)=>unit.id===sourceId);
     if(!source||source.abilityUses<=0||(team.usedAbilities||[]).includes(sourceId))return reply({ok:false,error:"That character has no unique ability use remaining this round."});
@@ -762,25 +765,29 @@ io.on("connection", (socket) => {
       team.board.forEach((unit)=>{if(unit?.role==="Scout")unit.raidWheeljackBoost=true;});effect="Wheeljack empowered every deployed Scout's next attack.";
     } else if(sourceId==="soundwave"){
       if(!team.board.some((unit)=>unit?.id==="megatron"))return reply({ok:false,error:"Soundwave requires Megatron deployed."});
-      drawRaidCards(room,3);effect="Soundwave drew three shared Battle Cards.";
+      team.board.filter((unit)=>unit?.faction==="Decepticon").forEach((unit)=>{unit.raidSignalBoost=true;});effect="Soundwave synchronized with Megatron; deployed Decepticons gain +5 on their next attack.";
     } else if(sourceId==="grapple"){
-      const amount=team.backups.filter((unit)=>unit.faction==="Autobot").length;drawRaidCards(room,amount);effect="Grapple drew "+amount+" shared Battle Card"+(amount===1?"":"s")+".";
+      const amount=team.backups.filter((unit)=>unit.faction==="Autobot").length;
+      team.board.filter((unit)=>unit?.faction==="Autobot").forEach((unit)=>{unit.hp=Math.min(unit.max,unit.hp+amount*5);});effect="Grapple repaired deployed Autobots for "+(amount*5)+" each (one repair pulse per Autobot Backup).";
     } else if(sourceId==="rumble"){
       if(!team.board.some((unit)=>unit?.id==="frenzy"))return reply({ok:false,error:"Rumble requires Frenzy deployed."});
-      drawRaidCards(room,1);effect="Rumble drew one shared Battle Card.";
+      source.raidRumbleBoost=true;effect="Rumble synchronized with Frenzy; Rumble's next attack deals +10 damage.";
     } else if(sourceId==="highbrow"){room.bossTacticianDisabledUntil=room.round+3;effect="Highbrow disabled Quintesson Tactician abilities for three rounds.";}
     else if(sourceId==="pmega"){for(let i=room.bossBoard.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[room.bossBoard[i],room.bossBoard[j]]=[room.bossBoard[j],room.bossBoard[i]];}room.revealedBossSlots.clear();effect="Pmega reordered the concealed court.";}
     else if(sourceId==="wasp"){room.bossBoard.map((unit,index)=>unit?.role==="Scout"?index:-1).filter((index)=>index>=0).forEach((slot)=>room.revealedBossSlots.add(slot));effect="Waspinator revealed every detectable Quintesson Scout.";}
     else if(sourceId==="bludgeon"){team.hiddenSpaces=[0,1,2];room.bossIntel.set(socket.id,{occupied:new Set(),empty:new Set()});effect="Bludgeon concealed three of your board spaces from the boss.";}
     else if(sourceId==="cyclonus"){team.board.filter((unit)=>unit?.faction==="Decepticon").forEach((unit)=>{unit.hp=Math.min(unit.max,unit.hp+5);});effect="Cyclonus healed every Decepticon on your board by 5.";}
-    else if(sourceId==="overlord"){if(room.battleHand.length<4)return reply({ok:false,error:"Overlord requires four shared Battle Cards to scrap."});room.battleHand.splice(0,4);source.dmg=20;effect="Overlord scrapped four shared Battle Cards and reached 20 Damage.";}
-    else if(sourceId==="hoist"){const count=Math.max(1,room.battleHand.length);room.battleHand=[];drawRaidCards(room,count);effect="Hoist replaced the shared Battle Cards with random draws.";}
+    else if(sourceId==="overlord"){source.dmg=20;effect="Overlord reached 20 Damage; the court's card economy is disabled in Boss Rush.";}
+    else if(sourceId==="hoist"){team.board.filter((unit)=>unit&&unit.hp<unit.max).forEach((unit)=>{unit.hp=Math.min(unit.max,unit.hp+10);});effect="Hoist redirected his repair systems and restored 10 Health to each damaged ally.";}
     else if(sourceId==="galvatron"){if(sourceSlot>=0)return reply({ok:false,error:"Galvatron must be used from Backup."});team.armorTargets=team.board.filter(Boolean).slice(0,2).map((unit)=>unit.id);effect="Galvatron shielded two deployed characters for the next boss attacks.";}
-    else if(sourceId==="razor"){const backup=team.backups.shift();if(!backup)return reply({ok:false,error:"Razorclaw has no Backup to combine with."});source.max+=backup.max;source.hp+=backup.max;if(backup.id==="rampage")drawRaidCards(room,2);effect="Razorclaw combined with a hidden Backup and gained "+backup.max+" Health.";}
+    else if(sourceId==="razor"){const backup=team.backups.shift();if(!backup)return reply({ok:false,error:"Razorclaw has no Backup to combine with."});source.max+=backup.max;source.hp+=backup.max;if(backup.id==="rampage")source.raidRampageBoost=true;effect="Razorclaw combined with a hidden Backup and gained "+backup.max+" Health"+(backup.id==="rampage"?"; its next attack gains +10 Damage.":".");}
     else if(sourceId==="rhinox"){const fallen=(team.fallen||[]).find((unit)=>unit.faction==="Maximal");if(!fallen)return reply({ok:false,error:"Rhinox has no defeated Maximal to revive."});team.fallen=team.fallen.filter((unit)=>unit.id!==fallen.id);team.backups.push({...fallen,hp:Math.ceil(fallen.max/2)});effect="Rhinox revived a defeated Maximal into Backup at half Health.";}
     else if(sourceId==="rattrap"){room.repositionBlockedUntil=room.round;effect="Rattrap blocked repositioning this round.";}
-    else if(sourceId==="jhiaxus"){effect="Jhiaxus forced the Tribunal to expose its Backup count: "+team.backups.length+" remain.";}
-    source.abilityUses=Math.max(0,source.abilityUses-1);team.usedAbilities=[...(team.usedAbilities||[]),sourceId];room.actions--;
+    else if(sourceId==="jhiaxus"){const opponent=[...room.teams.entries()].find(([id])=>id!==socket.id)?.[1];effect="Jhiaxus forced the Tribunal to expose the opponent's Backup count: "+(opponent?.backups.length||0)+" remain.";}
+    // A unique ability is a once-per-round effect, not one of the player's two attacks.
+    // Keeping the attack budget separate lets a player use an ability and still make
+    // both attacks promised by Boss Rush.
+    source.abilityUses=Math.max(0,source.abilityUses-1);team.usedAbilities=[...(team.usedAbilities||[]),sourceId];
     room.log.push(effect);raidEvent(room,{kind:"ability",name:source.name,side:"players"});reply({ok:true});emitRaid(room);
   });
   socket.on("raid-reposition",({unitId,from,to}={},reply=()=>{})=>{

@@ -309,3 +309,45 @@ html[data-theme="quintesson-archive"] .stage-header,html[data-theme="quintesson-
 .raid-boss-slot .raid-hidden-card-back{margin-inline:auto}
 @media(max-width:1100px){.raid-deployment-layout{grid-template-columns:1fr}.raid-deployment-layout .raid-placement-hand{position:static}.raid-combat-page .raid-arena{grid-template-columns:1fr}.raid-battle-tools{grid-template-columns:1fr}}
 @media(max-width:700px){.raid-combat-page .raid-player-grid{grid-template-rows:repeat(3,minmax(56px,1fr))}.raid-combat-page .raid-player-grid .raid-slot{min-height:56px}.raid-backup-cards{grid-template-columns:repeat(3,1fr)}}
+
+/* Version 23: Boss Rush court layout, private deployment and attack-only turns */
+.raid-deployment-layout{grid-template-columns:minmax(0,1fr) minmax(300px,.72fr);gap:18px}
+.raid-deployment-layout .raid-player-boards-panel{background:linear-gradient(145deg,#142719f5,#08120bf7);border:1px solid #5f8d55;box-shadow:inset 7px 0 #46c96e55,0 18px 42px #0009}
+.raid-placement-privacy{margin:8px 0 12px;color:#9ac8a5;font-size:.78rem;line-height:1.45}
+.raid-deployment-layout .raid-player-board{max-width:760px;margin:auto}
+.raid-deployment-layout .raid-placement-hand{background:linear-gradient(145deg,#24150ff5,#0c0e0bf7);border-color:#9b663e;box-shadow:inset 6px 0 #f1c45b55,0 18px 42px #0009}
+.raid-deployment-layout .raid-placement-hand h2{color:#f1c45b}
+.raid-combat-page .raid-arena{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:stretch}
+.raid-combat-page .raid-player-boards-panel{background:linear-gradient(145deg,#102319f5,#07100bf7);border-color:#4b9161;box-shadow:inset 8px 0 #31d97655,0 18px 48px #000a}
+.raid-combat-page .raid-player-boards{grid-template-columns:1fr;gap:10px}
+.raid-combat-page .raid-player-board{background:linear-gradient(145deg,#102b1df2,#09150df2);border-color:#3e8c59;box-shadow:inset 0 0 22px #2bdb6a12}
+.raid-combat-page .raid-player-board.ally-board{border-color:#327a52;filter:saturate(.88)}
+.raid-combat-page .raid-player-board.your-board{border-color:#73db83;box-shadow:0 0 0 1px #73db8333,inset 0 0 28px #2bdb6a18}
+.raid-combat-page .raid-player-board.your-board header strong{color:#b8ffc5}
+.raid-combat-page .raid-player-board.ally-board header strong{color:#8fcaa0}
+.raid-combat-page .raid-boss-panel{background:linear-gradient(145deg,#321719f4,#12090bf7);border-color:#b2504b;box-shadow:inset 8px 0 #e04e423b,inset 0 0 35px #e04e4215,0 18px 48px #000a}
+.raid-combat-page .raid-boss-panel .raid-board-title{border-color:#8e4548}
+.raid-combat-page .raid-boss-panel .raid-board-title p{color:#ff8173}
+.raid-combat-page .raid-boss-panel .raid-boss-board{background:#1a0a0d;border-color:#9a484b}
+.raid-combat-page .raid-boss-panel .raid-boss-slot{background:linear-gradient(145deg,#311217,#17090c);border-color:#9e4f4a}
+.raid-combat-page .raid-boss-panel .raid-boss-slot:hover:not(:disabled){border-color:#ff8173;box-shadow:0 0 18px #ff665855}
+.raid-combat-page .raid-judge-space{max-width:none;margin:8px 0 10px;padding:8px;background:linear-gradient(145deg,#4d3b17,#191108);border:2px solid #f1c45b;box-shadow:0 0 25px #f1c45b33,inset 0 0 24px #f1c45b18}
+.raid-combat-page .raid-judge-card{border-color:#f1c45b;background:linear-gradient(145deg,#392912,#120d06);box-shadow:0 0 24px #f1c45b44,inset 0 0 20px #f1c45b18}
+.raid-combat-page .raid-judge-card span{color:#f1c45b}
+.raid-command-panel{max-width:1480px;margin:0 auto 15px;padding:12px;background:linear-gradient(145deg,#101b14f5,#080d09f5);border:1px solid #576c4c;box-shadow:0 15px 35px #0008}
+.raid-command-status{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(280px,.8fr);gap:14px;align-items:start}
+.raid-command-status h2{margin:2px 0 5px;text-transform:uppercase}
+.raid-command-status p{margin:0;color:#aab7a3;font-size:.76rem;line-height:1.45}
+.raid-command-kicker{color:var(--raid-acid)!important;font-size:.62rem!important;font-weight:900;letter-spacing:.14em;text-transform:uppercase}
+.raid-ability-help{margin-top:10px!important;padding-top:9px;border-top:1px solid #394c38}
+.raid-ability-help strong{color:#e5f7c4}
+.raid-battle-disabled{display:inline-flex;margin-top:10px;padding:5px 8px;border:1px solid #9e4f4a;background:#321217;color:#ff9d8f;font-size:.6rem;font-weight:900;letter-spacing:.08em}
+.raid-command-panel .raid-backup-area{background:#0b170f;border-color:#4d8a5e}
+.raid-command-panel .raid-backup-cards{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media(max-width:1100px){.raid-combat-page .raid-arena{grid-template-columns:1fr}.raid-command-status{grid-template-columns:1fr}}
+@media(max-width:700px){.raid-deployment-layout{grid-template-columns:1fr}.raid-combat-page .raid-player-boards{grid-template-columns:1fr}.raid-command-panel .raid-backup-cards{grid-template-columns:repeat(3,1fr)}}
+
+html[data-theme="verdict-observatory"]{--bg:#080b14;--surface:#11192a;--surface2:#1b2940;--text:#edf5ff;--sub:#91a4bf;--accent:#f4cf68;--accent2:#6b78d9;--danger:#ef6670;--line:#496188;--glow:#f4cf6855;color-scheme:dark}
+html[data-theme="verdict-observatory"] body{background-color:var(--bg);background-image:radial-gradient(circle at 50% 0,#f4cf6822 0 2px,transparent 3px 76px,#6b78d91b 78px 81px,transparent 83px),linear-gradient(90deg,transparent 0 49%,#f4cf6809 50% 51%,transparent 52%),repeating-linear-gradient(0deg,transparent 0 38px,#6b78d90c 39px 40px,transparent 41px 79px);background-size:320px 320px,100% 100%,160px 160px}
+html[data-theme="verdict-observatory"] .stage-header,html[data-theme="verdict-observatory"] .rail-panel,html[data-theme="verdict-observatory"] .start-card,html[data-theme="verdict-observatory"] .builder-head{border-color:#f4cf6880;box-shadow:inset 7px 0 #6b78d9bb,inset -3px 0 #f4cf6866,0 22px 48px #000d}
+.app-shell[data-card-border="arbiter-crest"]{--card-frame:#6979ae;--card-frame-2:#ffe59a}.app-shell[data-card-border="arbiter-crest"] .character-border-frame{border:5px solid #3b4a79!important;border-radius:15px 3px 15px 3px!important;box-shadow:0 0 0 2px #080b16,0 0 20px #f4cf6866,inset 0 0 18px #6b78d944!important}.app-shell[data-card-border="arbiter-crest"] .character-border-frame:before{inset:5px;border:1px solid #ffe59a;clip-path:polygon(0 0,36% 0,50% 10px,64% 0,100% 0,100% 36%,calc(100% - 10px) 50%,100% 64%,100% 100%,64% 100%,50% calc(100% - 10px),36% 100%,0 100%,0 64%,10px 50%,0 36%)}.app-shell[data-card-border="arbiter-crest"] .character-border-frame:after{inset:0;background:radial-gradient(circle at 50% 8px,#ffe59a 0 3px,transparent 4px),radial-gradient(circle at 8px 50%,#6b78d9 0 4px,transparent 5px),radial-gradient(circle at calc(100% - 8px) 50%,#6b78d9 0 4px,transparent 5px);clip-path:none}
