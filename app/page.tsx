@@ -178,6 +178,7 @@ const themes = [
   ["darksyde", "Darksyde Reactor"],
   ["verdict-engine", "Verdict Engine"],
   ["boss-rush", "Boss Rush Obelisk"],
+  ["quintesson-eclipse", "Quintesson Eclipse"],
 ] as const;
 const cardBorders = [
   ["energon-edge", "Energon Edge"],
@@ -189,6 +190,7 @@ const cardBorders = [
   ["stasis-chrome", "Stasis Chrome"],
   ["tribunal-shackle", "Tribunal Shackle"],
   ["quintesson-seal", "Quintesson Seal"],
+  ["verdict-crown", "Verdict Crown"],
 ] as const;
 const activeAbilities = new Set([
   "eject",
@@ -383,10 +385,13 @@ function RulesModal() {
             <p>
               Raid is a separate two-player PvE mode. Each player brings a
               legal nine-character deck: six deploy and three remain as
-              Backups. Player 1 takes two actions, Player 2 takes two actions,
-              then the visible Quintesson court takes its boss turn. Player
-              order reverses each round. Defeat the Judge to win; the Raid is
-              lost only when both player teams have no surviving characters.
+              Backups. Each player places cards on their own highlighted 3 × 3
+              board beside their ally; only the owner can move or attack with
+              those cards. Player 1 takes two actions, Player 2 takes two
+              actions, then the visible Judge and concealed Quintesson court
+              take their boss turn. Player order reverses each round. Defeat
+              the Judge to win; the Raid is lost only when both player teams
+              have no surviving characters.
               The Bailiff protects the Judge, the Prosecutor marks the weakest
               target, the Executor punishes wounded characters, and the Judge
               revives troops or summons Allicons.

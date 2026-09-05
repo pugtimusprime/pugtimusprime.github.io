@@ -1,5 +1,5 @@
 export const QUINTESSON_RAID = {
-  board: { playerColumns: 3, playerRows: 6, bossColumns: 3, bossRows: 2 },
+  board: { playerBoards: 2, playerColumns: 3, playerRows: 3, bossColumns: 3, bossRows: 2 },
   boss: { id: "quintesson-judge", name: "Quintesson Judge", hp: 700, dmg: 15, image: "/cards/characters/quintesson-judge.png", ability: "When at the start of each boss turn summon one defeated quintesson troop back to half health, if none are defeated place down one allicon and limited to two allicons on the board at a time." },
   court: [
     { id: "quintesson-bailiff", name: "Quintesson Bailiff", role: "Trooper", hp: 80, dmg: 20, image: "/cards/characters/quintesson-bailiff.png", ability: "While the Bailiff is alive, the Judge takes 50% less damage." },

@@ -133,10 +133,12 @@ Render's free service may sleep when inactive. The first connection after a quie
 
 Choose **Quintesson Raid** from the main menu and share a Raid room code with
 one friend. This is a separate two-player PvE Boss Rush: both players build
-legal nine-character decks, take turns placing six characters onto a shared
-3-wide by 6-tall grid, and fight the same always-visible Quintesson court.
-The Judge occupies a larger leader space behind the boss faction's 2-by-3
-troop board. Players can only move and attack with their own cards.
+legal nine-character decks, then take turns placing six characters onto their
+own 3-by-3 board. The two player boards sit side by side, with each player's
+board highlighted for them and locked to that player's controls. The boss
+court is visible beside both boards at the same time: the Judge occupies a
+larger leader space, while the boss faction's 2-by-3 troop board shows
+concealed enemy cards.
 
 Each round gives the first player two actions and the second player two actions,
 then the server runs the boss turn. Player order reverses for the next round.

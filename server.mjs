@@ -54,6 +54,9 @@ function createRaidRoom(code) {
 }
 function bossTroops(room) { return room.bossBoard.filter(Boolean); }
 function bossUnits(room) { return [room.judge, ...bossTroops(room)]; }
+function publicBossBoard(room) {
+  return room.bossBoard.map((unit, slot) => unit ? { slot, hidden: true, occupied: true } : null);
+}
 function raidPublic(room, viewer) {
   return {
     code:room.code, stage:room.stage, round:room.round, youId:viewer,
@@ -61,7 +64,7 @@ function raidPublic(room, viewer) {
     placementActiveId:room.stage === "deployment" ? room.placementOrder[room.placementIndex] || null : null,
     actions:room.actions, repositions:Object.fromEntries(room.repositions),
     players:[...room.players.values()].map(p=>({...p,ready:room.ready.has(p.id),team:room.teams.get(p.id)||null})),
-    judge:room.judge, boss:bossUnits(room), bossBoard:room.bossBoard,
+    judge:room.judge, boss:[room.judge], bossBoard:publicBossBoard(room),
     battleHand:room.battleHand, battlePlayed:room.battlePlayed, log:room.log.slice(-30), eventSeq:room.eventSeq,
   };
 }
@@ -71,8 +74,10 @@ function raidEvent(room, event) {
   for(const [id] of room.players) io.to(id).emit("raid-event",{...event,seq:room.eventSeq});
 }
 function livingRaidUnits(team) { return [...(team?.board||[]),...(team?.backups||[]),...(team?.pending||[])].filter(u=>u&&u.hp>0); }
-function firstEmptyPlayerSlot(room) {
-  for(let i=0;i<18;i++) if (![...room.teams.values()].some(team=>team.board[i])) return i;
+function firstEmptyPlayerSlot(room, playerId) {
+  const team = room.teams.get(playerId);
+  if (!team) return -1;
+  for(let i=0;i<9;i++) if (!team.board[i]) return i;
   return -1;
 }
 function drawRaidCards(room, amount=1) {
@@ -129,23 +134,23 @@ function summonOrRevive(room) {
   const fallen=room.fallen.shift();
   if(fallen) {
     room.bossBoard[empty]={...fallen,hp:Math.ceil(fallen.max/2)};
-    room.log.push(`${fallen.name} returned at half Health.`);
-    raidEvent(room,{kind:"summon",unit:room.bossBoard[empty],slot:empty});
+    room.log.push("A defeated Quintesson troop returned at half Health.");
+    raidEvent(room,{kind:"summon",slot:empty,side:"boss"});
     return;
   }
   const allicons=bossTroops(room).filter((unit)=>unit.id.startsWith("allicon")).length;
   if(allicons<2) {
     room.alliconSerial += 1;
     room.bossBoard[empty]={...raidTemplates.allicon,id:`allicon-${room.alliconSerial}`};
-    room.log.push("The Judge placed an Allicon on the court.");
-    raidEvent(room,{kind:"summon",unit:room.bossBoard[empty],slot:empty});
+    room.log.push("The Judge placed a hidden Allicon on the court.");
+    raidEvent(room,{kind:"summon",slot:empty,side:"boss"});
   }
 }
 function reinforceRaidTeam(room,team,slot) {
   if(!team.backups.length) return;
   const replacement=team.backups.shift();
   team.board[slot]=replacement;
-  room.log.push(`${replacement.name} reinforced the shared grid.`);
+  room.log.push(`${replacement.name} reinforced its owner's 3 x 3 board.`);
 }
 function raidBossTurn(room) {
   room.stage="boss"; emitRaid(room);
@@ -164,8 +169,9 @@ function raidBossTurn(room) {
     if(attacker.id==="quintesson-executor"&&chosen.unit.hp<=chosen.unit.max/2) damage+=10;
     if(attacker.id.startsWith("allicon")) damage+=Math.min(10,bossTroops(room).filter((unit)=>unit.id.startsWith("allicon")&&unit.hp>0&&unit!==attacker).length*5);
     chosen.unit.hp=Math.max(0,chosen.unit.hp-damage);
-    room.log.push(`${attacker.name} struck ${chosen.unit.name} for ${damage}.`);
-    raidEvent(room,{kind:"hit",attackerId:attacker.id,targetId:chosen.unit.id,damage,side:"boss",defeated:chosen.unit.hp===0});
+    const attackerName = attacker.id === "quintesson-judge" ? attacker.name : "A hidden Quintesson troop";
+    room.log.push(`${attackerName} struck ${chosen.unit.name} for ${damage}.`);
+    raidEvent(room,{kind:"hit",attackerId:attacker.id === "quintesson-judge" ? attacker.id : undefined,targetId:chosen.unit.id,damage,side:"boss",defeated:chosen.unit.hp===0});
     if(chosen.unit.hp===0) {
       const team=room.teams.get(chosen.playerId); team.board[chosen.slot]=null; reinforceRaidTeam(room,team,chosen.slot);
     }
@@ -184,10 +190,11 @@ function completeRaidReposition(room) {
   if([...room.repositions.values()].some((moves)=>moves>0)) return;
   startRaidRound(room);
 }
-function findBossTarget(room, id) {
+function findBossTarget(room, id, targetSlot) {
   if (id === room.judge.id && room.judge.hp > 0) return { unit: room.judge, slot: -1 };
-  const slot = room.bossBoard.findIndex((unit) => unit?.id === id && unit.hp > 0);
-  return slot >= 0 ? { unit: room.bossBoard[slot], slot } : null;
+  if (!Number.isInteger(targetSlot) || targetSlot < 0 || targetSlot >= room.bossBoard.length) return null;
+  const unit = room.bossBoard[targetSlot];
+  return unit?.hp > 0 ? { unit, slot: targetSlot } : null;
 }
 function findPlayerUnit(room, id) {
   for (const [playerId, team] of room.teams) {
@@ -196,10 +203,6 @@ function findPlayerUnit(room, id) {
   }
   return null;
 }
-function sharedRaidBoardOccupied(room, slot) {
-  return [...room.teams.values()].some((team) => Boolean(team.board[slot]));
-}
-
 function detachRaid(socket) {
   const code = socket.data.raidCode;
   if (!code) return;
@@ -497,46 +500,47 @@ io.on("connection", (socket) => {
     const units=legalRaidDeck(ids);
     if(!units)return reply({ok:false,error:"Submit nine unique characters with 2 Commanders, 3 Scouts, 2 Troopers and 2 Tacticians."});
     room.decks.set(socket.id,ids);
-    room.teams.set(socket.id,{board:Array(18).fill(null),backups:units.slice(6),pending:units.slice(0,6),used:[]});
+    room.teams.set(socket.id,{board:Array(9).fill(null),backups:units.slice(6),pending:units.slice(0,6),used:[]});
     reply({ok:true});
     if(room.decks.size===2){
       room.stage="deployment"; room.placementOrder=[...room.players.keys()]; room.placementIndex=0;
-      room.log.push("Take turns placing six characters on the shared 3 x 6 grid.");
+      room.log.push("Take turns placing six characters across your own 3 x 3 board.");
     }
     emitRaid(room);
   });
   socket.on("raid-place",({unitId,slot}={},reply=()=>{})=>{
     const room=raidRooms.get(socket.data.raidCode), team=room?.teams.get(socket.id);
     if(!room||room.stage!=="deployment"||room.placementOrder[room.placementIndex]!==socket.id)return reply({ok:false,error:"Wait for your placement turn."});
-    if(!Number.isInteger(slot)||slot<0||slot>=18||sharedRaidBoardOccupied(room,slot))return reply({ok:false,error:"Choose an empty shared grid space."});
+    if(!Number.isInteger(slot)||slot<0||slot>=9||team.board[slot])return reply({ok:false,error:"Choose an empty space on your own 3 x 3 board."});
     const index=team.pending.findIndex((unit)=>unit.id===unitId);
     if(index<0)return reply({ok:false,error:"Choose one of your unplaced characters."});
     team.board[slot]=team.pending.splice(index,1)[0];
-    room.log.push(`${room.players.get(socket.id)?.name||"Player"} placed a character in shared space ${slot+1}.`);
+    room.log.push(`${room.players.get(socket.id)?.name||"Player"} placed a character in their 3 x 3 board space ${slot+1}.`);
     while(room.placementIndex<room.placementOrder.length&&room.teams.get(room.placementOrder[room.placementIndex])?.pending.length===0)room.placementIndex+=1;
     reply({ok:true});
     if(room.teams.size===2&&[...room.teams.values()].every((entry)=>entry.pending.length===0)){
       room.turnOrder=[...room.players.keys()]; room.turnIndex=0; room.round=0; room.log.push(`${room.players.get(room.turnOrder[0])?.name||"Player"} acts first. Each player has two actions before the boss turn.`); startRaidRound(room);
     } else emitRaid(room);
   });
-  socket.on("raid-attack",({attackerId,targetId}={},reply=()=>{})=>{
+  socket.on("raid-attack",({attackerId,targetId,targetSlot}={},reply=()=>{})=>{
     const room=raidRooms.get(socket.data.raidCode),team=room?.teams.get(socket.id);
     if(!room||room.stage!=="combat"||room.turnOrder[room.turnIndex]!==socket.id||room.actions<=0)return reply({ok:false,error:"It is not your attack turn."});
-    const attacker=team?.board.find((unit)=>unit?.id===attackerId&&unit.hp>0),target=findBossTarget(room,targetId);
+    const attacker=team?.board.find((unit)=>unit?.id===attackerId&&unit.hp>0),target=findBossTarget(room,targetId,targetSlot);
     if(!attacker||!target)return reply({ok:false,error:"Choose one of your characters and a living boss card."});
     if((team.used||[]).includes(attacker.id))return reply({ok:false,error:"That character already attacked this turn."});
     let damage=attacker.dmg;
     if(target.unit.id==="quintesson-judge"&&bossTroops(room).some((unit)=>unit.id==="quintesson-bailiff"&&unit.hp>0))damage=Math.ceil(damage/2);
     target.unit.hp=Math.max(0,target.unit.hp-damage); team.used=[...(team.used||[]),attacker.id]; room.actions--;
-    room.log.push(`${attacker.name} dealt ${damage} to ${target.unit.name}.`);
-    raidEvent(room,{kind:"hit",attackerId:attacker.id,targetId:target.unit.id,damage,side:"players",defeated:target.unit.hp===0});
+    const targetName = target.unit.id === room.judge.id ? target.unit.name : "a hidden Quintesson troop";
+    room.log.push(`${attacker.name} dealt ${damage} to ${targetName}.`);
+    raidEvent(room,{kind:"hit",attackerId:attacker.id,targetId:target.unit.id===room.judge.id?target.unit.id:undefined,targetSlot:target.unit.id===room.judge.id?undefined:target.slot,damage,side:"players",defeated:target.unit.hp===0});
     if(target.unit.hp===0){
       if(target.unit.id==="quintesson-judge"){room.stage="victory";room.log.push("The Quintesson Judge has fallen. Raid victory!");}
       else {room.bossBoard[target.slot]=null;room.fallen.push(target.unit);}
     }
     reply({ok:true}); emitRaid(room);
   });
-  socket.on("raid-play-battle",({name,targetId,row}={},reply=()=>{})=>{
+  socket.on("raid-play-battle",({name,targetId,targetSlot,row}={},reply=()=>{})=>{
     const room=raidRooms.get(socket.data.raidCode),team=room?.teams.get(socket.id);
     if(!room||room.stage!=="combat"||room.turnOrder[room.turnIndex]!==socket.id||room.battlePlayed)return reply({ok:false,error:"Only one shared Battle Card can be played across both player turns."});
     const cardIndex=room.battleHand.indexOf(name);
@@ -547,20 +551,18 @@ io.on("connection", (socket) => {
       const target=findPlayerUnit(room,targetId)||raidTargetCandidates(room).sort((a,b)=>a.unit.hp-b.unit.hp)[0];
       if(target){const amount=name==="Power Of The Primes"?35:10;target.unit.hp=Math.min(target.unit.max,target.unit.hp+amount);effect=`${target.unit.name} healed ${amount}.`;}
     } else if(name==="Deserved Punishment"){
-      const target=findBossTarget(room,targetId)||findBossTarget(room,room.judge.id); if(target){target.unit.hp=Math.max(0,target.unit.hp-10);effect=`${target.unit.name} took 10 damage.`;if(target.unit.hp===0&&target.unit.id==="quintesson-judge")room.stage="victory";}
+      const target=findBossTarget(room,targetId,targetSlot)||findBossTarget(room,room.judge.id); if(target){target.unit.hp=Math.max(0,target.unit.hp-10);const targetName=target.unit.id===room.judge.id?target.unit.name:"a hidden Quintesson troop";effect=`${targetName} took 10 damage.`;if(target.unit.hp===0&&target.unit.id==="quintesson-judge")room.stage="victory";}
     } else if(name==="War Dawn"){
       const chosenRow=Number.isInteger(row)?Math.max(0,Math.min(1,row)):0; for(let i=0;i<3;i++){const slot=chosenRow*3+i,unit=room.bossBoard[slot];if(unit)unit.hp=Math.max(0,unit.hp-15);} effect=`War Dawn hit Boss Court row ${chosenRow+1} for 15.`;
     } else if(name==="Reinforce"){
-      const replacement=team?.backups.shift(),slot=firstEmptyPlayerSlot(room); if(replacement&&slot>=0){team.board[slot]=replacement;effect=`${replacement.name} reinforced shared space ${slot+1}.`;}
+      const replacement=team?.backups.shift(),slot=firstEmptyPlayerSlot(room,socket.id); if(replacement&&slot>=0){team.board[slot]=replacement;effect=`${replacement.name} reinforced your 3 x 3 board space ${slot+1}.`;}
     } else if(name==="Tyrants Reign"){drawRaidCards(room,2);effect="Tyrants Reign drew two more shared Battle Cards.";}
     room.log.push(effect);raidEvent(room,{kind:"battle",name,side:"players"});reply({ok:true});emitRaid(room);
   });
   socket.on("raid-reposition",({unitId,from,to}={},reply=()=>{})=>{
     const room=raidRooms.get(socket.data.raidCode),team=room?.teams.get(socket.id);
     if(!room||room.stage!=="reposition"||(room.repositions.get(socket.id)||0)<=0)return reply({ok:false,error:"You have no Reposition move remaining."});
-    if(!Number.isInteger(from)||!Number.isInteger(to)||from<0||from>=18||to<0||to>=18||team.board[from]?.id!==unitId)return reply({ok:false,error:"Choose one of your own cards and a valid shared space."});
-    const occupant=[...room.teams.values()].map((entry)=>entry.board[to]).find(Boolean);
-    if(occupant&&occupant!==team.board[to]&&occupant!==team.board[from])return reply({ok:false,error:"You cannot move onto your ally's card."});
+    if(!Number.isInteger(from)||!Number.isInteger(to)||from<0||from>=9||to<0||to>=9||team.board[from]?.id!==unitId)return reply({ok:false,error:"Choose one of your own cards and a valid space on your 3 x 3 board."});
     [team.board[from],team.board[to]]=[team.board[to],team.board[from]];room.repositions.set(socket.id,0);room.log.push(`${room.players.get(socket.id)?.name||"Player"} used one Reposition move.`);raidEvent(room,{kind:"reposition",side:"players",playerId:socket.id});reply({ok:true});emitRaid(room);completeRaidReposition(room);
   });
   socket.on("raid-skip-reposition",()=>{

@@ -85,7 +85,7 @@ function sharedPlaced(state) {
 }
 
 test("the Quintesson court has the approved Boss Rush board, stats and wording", () => {
-  assert.deepEqual(QUINTESSON_RAID.board, { playerColumns: 3, playerRows: 6, bossColumns: 3, bossRows: 2 });
+  assert.deepEqual(QUINTESSON_RAID.board, { playerBoards: 2, playerColumns: 3, playerRows: 3, bossColumns: 3, bossRows: 2 });
   assert.deepEqual([QUINTESSON_RAID.boss.hp, QUINTESSON_RAID.boss.dmg], [700, 15]);
   assert.match(QUINTESSON_RAID.boss.ability, /two allicons/i);
   assert.deepEqual(QUINTESSON_RAID.court.map(({ id, role, hp, dmg }) => [id, role, hp, dmg]), [
@@ -110,8 +110,10 @@ test("Raid is a separate route with shared boards, battle cards and animations",
   const server = readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
   assert.match(home, /Quick Match/);
   assert.match(home, /quick-match/);
-  assert.match(raid, /Visible Quintesson Court/);
-  assert.match(raid, /3 x 6/);
+  assert.match(raid, /Quintesson Court/);
+  assert.match(raid, /3 × 3/);
+  assert.match(raid, /raid-player-boards/);
+  assert.match(raid, /Hidden Quintesson troop/);
   assert.match(raid, /Shared Battle Cards/);
   assert.match(css, /\.raid-shared-grid/);
   assert.match(css, /raid-hit-animation/);
@@ -163,13 +165,15 @@ test("Boss Rush alternates placement, shares one Battle Card and revives a Baili
     assert.equal((await emitReply(a, "raid-submit-deck", ids)).ok, true);
     assert.equal((await emitReply(b, "raid-submit-deck", ids)).ok, true);
     let state = await stateA.waitFor((next) => next.stage === "deployment");
+    assert.equal(state.players.every((player) => player.team.board.length === 9), true);
     while (state.stage === "deployment") {
       const activeId = state.placementActiveId;
       const socket = activeId === a.id ? a : b;
       const activePlayer = state.players.find((player) => player.id === activeId);
       const pending = activePlayer.team.pending;
-      const occupied = new Set(state.players.flatMap((player) => player.team.board.map((unit, index) => unit ? index : -1)).filter((index) => index >= 0));
-      const slot = Array.from({ length: 18 }, (_, index) => index).find((index) => !occupied.has(index));
+      const slot = activePlayer.team.board.findIndex((unit) => !unit);
+      assert.ok(slot >= 0 && slot < 9, "each player has an independent 3 x 3 placement board");
+      assert.equal((await emitReply(socket, "raid-place", { unitId: pending[0].id, slot: 9 })).ok, false);
       const placedBefore = sharedPlaced(state);
       assert.equal((await emitReply(socket, "raid-place", { unitId: pending[0].id, slot })).ok, true);
       state = await stateA.waitFor((next) => next.stage !== "deployment" || sharedPlaced(next) > placedBefore);
@@ -186,15 +190,19 @@ test("Boss Rush alternates placement, shares one Battle Card and revives a Baili
     assert.equal((await emitReply(firstSocket, "raid-play-battle", { name: card })).ok, true);
     state = await stateA.waitFor((next) => next.battlePlayed);
     assert.equal(stateA.latest.battlePlayed, true);
-    for (const attackerId of attackIds) assert.equal((await emitReply(firstSocket, "raid-attack", { attackerId, targetId: "quintesson-bailiff" })).ok, true);
+    for (const attackerId of attackIds) assert.equal((await emitReply(firstSocket, "raid-attack", { attackerId, targetSlot: 0 })).ok, true);
     firstSocket.emit("raid-end-turn");
     await stateB.waitFor((next) => next.stage === "combat" && next.activeId === secondSocket.id);
     const secondTeam = stateB.latest.players.find((player) => player.id === secondSocket.id).team;
     const secondAttackIds = ["grimlock", "sun"];
-    for (const attackerId of secondAttackIds) assert.equal((await emitReply(secondSocket, "raid-attack", { attackerId, targetId: "quintesson-bailiff" })).ok, true);
+    for (const attackerId of secondAttackIds) assert.equal((await emitReply(secondSocket, "raid-attack", { attackerId, targetSlot: 0 })).ok, true);
     secondSocket.emit("raid-end-turn");
     const reposition = await stateA.waitFor((next) => next.stage === "reposition");
-    assert.equal(reposition.bossBoard.find((unit) => unit?.id === "quintesson-bailiff")?.hp, 40);
+    assert.equal(reposition.bossBoard.filter(Boolean).length, 3);
+    assert.equal(reposition.bossBoard.filter(Boolean).every((unit) => unit.hidden && unit.occupied), true);
+    assert.equal(JSON.stringify(reposition.bossBoard).includes("quintesson-bailiff"), false);
+    assert.equal(JSON.stringify(reposition.bossBoard).includes("quintesson-prosecutor"), false);
+    assert.match(reposition.log.join("\n"), /defeated Quintesson troop returned at half Health/);
     assert.equal(reposition.repositions[a.id], 1);
     assert.equal(reposition.repositions[b.id], 1);
     a.emit("raid-skip-reposition"); b.emit("raid-skip-reposition");

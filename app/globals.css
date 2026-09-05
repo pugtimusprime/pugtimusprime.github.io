@@ -191,7 +191,7 @@ html[data-theme="verdict-engine"] .stage-header,html[data-theme="verdict-engine"
 @media(max-width:1100px){.raid-loadout>div{grid-template-columns:repeat(3,1fr)}.raid-card-pool{grid-template-columns:repeat(5,1fr)}.raid-boss-grid{grid-template-columns:repeat(3,1fr)}.raid-boss-grid>button.judge{grid-column:span 2}.raid-team-row{grid-template-columns:1fr}.raid-team-grid{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:680px){.raid-page{padding:10px}.raid-lobby{padding:30px 20px}.raid-rules-callout{grid-template-columns:1fr}.raid-lobby-actions>*{flex:1}.raid-header{align-items:stretch;flex-wrap:wrap}.raid-header>div:first-child{width:100%}.raid-header .primary{width:100%}.raid-loadout>div{grid-template-columns:1fr}.raid-card-pool{grid-template-columns:repeat(2,1fr)}.raid-boss-grid{grid-template-columns:repeat(2,1fr)}.raid-boss-grid>button.judge{grid-column:1/-1}.raid-boss-grid img{height:210px}.raid-team-grid{grid-template-columns:repeat(2,1fr)}.raid-players{grid-template-columns:1fr}.raid-board-title{align-items:start;gap:8px;flex-direction:column}}
 
-/* Boss Rush shared 3 x 6 grid, separate Judge space and multiplayer animations */
+/* Boss Rush twin 3 x 3 player boards, concealed court and multiplayer animations */
 .raid-rules-callout{grid-template-columns:repeat(5,1fr)}
 .shared-grid-panel,.raid-placement-hand,.raid-battle-panel{max-width:1480px;margin:0 auto 15px;padding:16px;background:var(--raid-panel);border:1px solid var(--raid-line)}
 .raid-shared-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:repeat(6,minmax(90px,1fr));gap:7px;padding:10px;background:#080d09;border:1px solid #56613b}
@@ -204,3 +204,42 @@ html[data-theme="boss-rush"]{--bg:#09070b;--surface:#18131e;--surface2:#251b2d;-
 html[data-theme="boss-rush"] body{background-color:var(--bg);background-image:radial-gradient(circle at 50% 4%,#f1c45b1b 0 2px,transparent 3px 58px,#a03f301c 60px 63px,transparent 65px),repeating-conic-gradient(from 15deg at 50% 4%,transparent 0 12deg,#f1c45b0d 13deg 15deg,transparent 16deg 30deg);background-size:250px 250px,250px 250px}
 html[data-theme="boss-rush"] .stage-header,html[data-theme="boss-rush"] .rail-panel,html[data-theme="boss-rush"] .start-card,html[data-theme="boss-rush"] .builder-head{border-color:#8b5c5d;box-shadow:inset 8px 0 #a03f30aa,inset -3px 0 #f1c45b77,0 20px 45px #000c}
 .app-shell[data-card-border="quintesson-seal"]{--card-frame:#8f5b4e;--card-frame-2:#f1c45b}.app-shell[data-card-border="quintesson-seal"] .character-border-frame{border:5px double #8f5b4e!important;border-radius:50% 8px 50% 8px!important;box-shadow:0 0 0 2px #24131a,0 0 18px #f1c45b66,inset 0 0 16px #a03f3033!important}.app-shell[data-card-border="quintesson-seal"] .character-border-frame:before{inset:6px;border:1px solid #f1c45b;clip-path:polygon(0 0,42% 0,50% 8px,58% 0,100% 0,100% 42%,calc(100% - 8px) 50%,100% 58%,100% 100%,58% 100%,50% calc(100% - 8px),42% 100%,0 100%,0 58%,8px 50%,0 42%)}.app-shell[data-card-border="quintesson-seal"] .character-border-frame:after{inset:1px;background:radial-gradient(circle at 50% 7px,#f1c45b 0 3px,transparent 4px),radial-gradient(circle at 7px 50%,#f1c45b 0 3px,transparent 4px),radial-gradient(circle at calc(100% - 7px) 50%,#f1c45b 0 3px,transparent 4px),radial-gradient(circle at 50% calc(100% - 7px),#f1c45b 0 3px,transparent 4px)}
+
+/* Version 21: twin 3 x 3 player boards and concealed Quintesson court */
+.raid-player-boards-panel{padding:16px;background:var(--raid-panel);border:1px solid var(--raid-line)}
+.raid-player-boards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.raid-player-board{min-width:0;padding:10px;background:#0b120d;border:2px solid #634633;box-shadow:inset 0 0 0 1px #252d21}
+.raid-player-board.your-board{border-color:var(--raid-acid);box-shadow:0 0 20px #c5f45a33,inset 0 0 0 1px #c5f45a66}
+.raid-player-board.ally-board{border-color:#8a5136;box-shadow:0 0 14px #8a513633,inset 0 0 0 1px #8a513655}
+.raid-player-board>header{display:flex;justify-content:space-between;align-items:start;gap:8px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #414b34}
+.raid-player-board>header strong{display:block;font-size:.78rem;letter-spacing:.08em}
+.raid-player-board>header small{display:block;margin-top:3px;color:#9ca58b;font-size:.58rem;letter-spacing:.06em}
+.raid-player-board>header>span{color:var(--raid-acid);font-size:.65rem;white-space:nowrap}
+.raid-player-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:repeat(3,minmax(92px,1fr));gap:5px}
+.raid-player-grid .raid-slot{min-height:92px}
+.raid-player-grid .raid-slot img{min-height:72px}
+.raid-board-backups{display:grid;gap:3px;margin-top:8px;padding-top:7px;border-top:1px solid #303a2a;color:#a3aa91;font-size:.62rem;line-height:1.35}
+.raid-board-backups strong{color:var(--raid-acid);font-size:.59rem;letter-spacing:.08em}
+.raid-boss-panel{min-width:0;height:100%;padding:14px}
+.raid-boss-panel .raid-board-title{padding-bottom:9px}
+.raid-boss-panel .raid-judge-space{margin:10px auto 8px}
+.raid-boss-panel .raid-judge-card{grid-template-columns:31% 1fr;gap:9px;padding:7px}
+.raid-boss-panel .raid-judge-card strong{margin:6px 0 4px;font-size:1.05rem}
+.raid-boss-panel .raid-judge-card span{font-size:.67rem}
+.raid-boss-panel .raid-judge-card small{margin-top:8px;font-size:.64rem;line-height:1.3}
+.raid-boss-panel .raid-judge-card img{aspect-ratio:546/768}
+.raid-boss-panel .raid-boss-board{grid-template-rows:repeat(2,minmax(98px,1fr));gap:5px;padding:6px}
+.raid-boss-panel .raid-boss-slot{min-height:98px;display:grid;grid-template-rows:auto auto auto 1fr;align-content:start;padding:6px}
+.raid-hidden-card-back{display:grid;place-items:center;width:38px;height:42px;margin-bottom:5px;background:radial-gradient(circle,#f1c45b 0 3px,transparent 4px),repeating-conic-gradient(from 0deg,#4b1e2e 0 18deg,#8b5c3e 18deg 36deg);border:1px solid #f1c45b;color:#f1c45b;font-size:1.3rem;font-weight:900}
+.raid-boss-panel .raid-boss-slot strong{font-size:.65rem}
+.raid-boss-panel .raid-boss-slot span{font-size:.54rem}
+.raid-boss-panel .raid-boss-slot small{font-size:.55rem;line-height:1.25}
+.raid-arena{max-width:1480px;margin:0 auto 15px;display:grid;grid-template-columns:minmax(0,1.45fr) minmax(340px,.85fr);gap:14px;align-items:stretch}
+.raid-arena>.raid-player-boards-panel{min-width:0}
+@media(max-width:1100px){.raid-arena{grid-template-columns:minmax(0,1fr)}.raid-boss-panel{height:auto}.raid-boss-panel .raid-judge-space{max-width:620px}.raid-boss-panel .raid-boss-board{max-width:760px}}
+@media(max-width:700px){.raid-player-boards{grid-template-columns:1fr}.raid-player-grid{grid-template-rows:repeat(3,minmax(80px,1fr))}.raid-player-grid .raid-slot{min-height:80px}.raid-arena{gap:10px}.raid-boss-panel .raid-boss-board{grid-template-rows:repeat(2,minmax(86px,1fr))}}
+
+html[data-theme="quintesson-eclipse"]{--bg:#060812;--surface:#111827;--surface2:#1c2639;--text:#eef4ff;--sub:#96a8c4;--accent:#61e6d4;--accent2:#bd477b;--danger:#ff536f;--line:#34506a;--glow:#61e6d455;color-scheme:dark}
+html[data-theme="quintesson-eclipse"] body{background-color:var(--bg);background-image:radial-gradient(circle at 50% 7%,#61e6d420 0 2px,transparent 3px 75px,#bd477b16 77px 80px,transparent 82px),repeating-linear-gradient(135deg,transparent 0 37px,#61e6d409 38px 39px,transparent 40px 74px);background-size:300px 300px,150px 150px}
+html[data-theme="quintesson-eclipse"] .stage-header,html[data-theme="quintesson-eclipse"] .rail-panel,html[data-theme="quintesson-eclipse"] .start-card,html[data-theme="quintesson-eclipse"] .builder-head{border-color:#61e6d477;box-shadow:inset 6px 0 #bd477baa,inset -2px 0 #61e6d488,0 20px 46px #000d}
+.app-shell[data-card-border="verdict-crown"]{--card-frame:#4b7e8f;--card-frame-2:#a8fff0}.app-shell[data-card-border="verdict-crown"] .character-border-frame{border:5px solid #285263!important;border-radius:9px 9px 26px 26px!important;box-shadow:0 0 0 2px #071018,0 0 19px #61e6d477,inset 0 0 18px #bd477b33!important}.app-shell[data-card-border="verdict-crown"] .character-border-frame:before{inset:5px;border:1px solid #a8fff0;clip-path:polygon(0 10px,10px 10px,10px 0,28% 0,50% 8px,72% 0,calc(100% - 10px) 0,calc(100% - 10px) 10px,100% 10px,100% 100%,0 100%)}.app-shell[data-card-border="verdict-crown"] .character-border-frame:after{inset:0;background:radial-gradient(circle at 50% 7px,#a8fff0 0 3px,transparent 4px),radial-gradient(circle at 12px calc(100% - 10px),#bd477b 0 4px,transparent 5px),radial-gradient(circle at calc(100% - 12px) calc(100% - 10px),#bd477b 0 4px,transparent 5px);clip-path:none}
