@@ -407,3 +407,36 @@ html[data-theme="quintesson-courtline"]{--bg:#13090d;--surface:#25121a;--surface
 html[data-theme="quintesson-courtline"] body{background-color:var(--bg);background-image:linear-gradient(90deg,transparent 0 49.5%,#f0c36a0d 50% 50.5%,transparent 51%),repeating-linear-gradient(0deg,transparent 0 42px,#9e3e4c12 43px 44px,transparent 45px 87px),radial-gradient(ellipse at 50% -8%,#f0c36a20,transparent 58%)}
 html[data-theme="quintesson-courtline"] .stage-header,html[data-theme="quintesson-courtline"] .rail-panel,html[data-theme="quintesson-courtline"] .start-card,html[data-theme="quintesson-courtline"] .builder-head{border-color:#f0c36a80;box-shadow:inset 7px 0 #9e3e4cbb,inset -3px 0 #f0c36a66,0 22px 48px #000d}
 .app-shell[data-card-border="courtline-seal"]{--card-frame:#9e3e4c;--card-frame-2:#f4d98b}.app-shell[data-card-border="courtline-seal"] .character-border-frame{border:5px solid #692b39!important;border-radius:4px 16px 16px 4px!important;box-shadow:0 0 0 2px #17080d,0 0 20px #f0c36a66,inset 0 0 17px #9e3e4c55!important}.app-shell[data-card-border="courtline-seal"] .character-border-frame:before{inset:5px;border:1px solid #f4d98b;clip-path:polygon(0 0,42% 0,50% 8px,58% 0,100% 0,100% 42%,calc(100% - 8px) 50%,100% 58%,100% 100%,58% 100%,50% calc(100% - 8px),42% 100%,0 100%,0 58%,8px 50%,0 42%)}.app-shell[data-card-border="courtline-seal"] .character-border-frame:after{inset:0;background:linear-gradient(135deg,transparent 0 47%,#f0c36a55 48% 52%,transparent 53%),radial-gradient(circle at 50% 50%,transparent 0 12px,#9e3e4c66 13px 14px,transparent 15px);clip-path:inset(3px)}
+
+/* Boss Rush scale and control update: multiplayer-sized cards, attack-only motion and a central turn control. */
+.raid-combat-page .raid-header,.raid-combat-page .raid-arena,.raid-combat-page .raid-command-panel,.raid-combat-page .raid-log{width:min(100%,1280px)}
+.raid-combat-page .raid-header{position:relative}
+.raid-turn-control{position:absolute;left:50%;top:50%;z-index:3;transform:translate(-50%,-50%)}
+.raid-turn-control:empty{display:none}
+.raid-turn-control .raid-end{width:auto;min-width:190px;margin:0;padding:11px 18px;border:1px solid #f1c45b;box-shadow:0 0 18px #f1c45b38;font-weight:900;text-transform:uppercase;letter-spacing:.06em}
+.raid-combat-page .raid-arena{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}
+.raid-combat-page .raid-player-grid{grid-template-rows:repeat(3,auto)}
+.raid-combat-page .raid-player-grid .raid-slot{min-height:0;aspect-ratio:546/768}
+.raid-combat-page .raid-player-grid .raid-slot img{height:100%;min-height:0;object-fit:contain}
+.raid-combat-page .raid-boss-panel .raid-judge-space{max-width:680px;margin:8px auto 10px}
+.raid-combat-page .raid-judge-card{min-height:0;grid-template-columns:34% 1fr;align-items:start}
+.raid-combat-page .raid-boss-panel .raid-judge-card img{max-height:none;aspect-ratio:546/768;object-fit:contain}
+.raid-combat-page .raid-boss-panel .raid-boss-board{grid-template-rows:repeat(2,auto);max-width:none}
+.raid-combat-page .raid-boss-panel .raid-boss-slot{min-height:0;aspect-ratio:546/768;grid-template-rows:minmax(0,1fr) auto auto;align-items:stretch}
+.raid-combat-page .raid-boss-panel .raid-boss-slot>img{width:100%;height:100%;min-height:0;object-fit:contain;background:#09090a}
+.raid-combat-page .raid-boss-panel .raid-boss-slot>small:not(.raid-court-result){display:none}
+.raid-combat-page .raid-boss-panel .raid-court-cardback{grid-row:1/-1}
+.raid-combat-page .raid-boss-panel .raid-court-result{position:absolute;right:6px;top:6px;margin:0}
+@media(max-width:1100px){.raid-combat-page .raid-arena{grid-template-columns:1fr}.raid-combat-page .raid-player-boards-panel,.raid-combat-page .raid-boss-panel{width:min(100%,650px);margin-inline:auto}}
+@media(max-width:900px){.raid-combat-page .raid-header{flex-wrap:wrap}.raid-turn-control{position:static;order:3;display:flex;width:100%;justify-content:center;transform:none}.raid-turn-control .raid-end{width:min(300px,100%)}}
+
+/* Cybertron War Room: a cobalt tactical chamber with orange range rings and cyan holographic lanes. */
+html[data-theme="cybertron-war-room"]{--bg:#050b15;--surface:#0d1a2a;--surface2:#142944;--text:#edf7ff;--sub:#8da9c1;--accent:#ff9f3d;--accent2:#168fa8;--danger:#ff4f5f;--line:#355879;--glow:#ff9f3d55;color-scheme:dark}
+html[data-theme="cybertron-war-room"] body{background-color:var(--bg);background-image:radial-gradient(circle at 50% 8%,transparent 0 58px,#ff9f3d20 59px 61px,transparent 62px 103px,#33d4ed16 104px 106px,transparent 107px),linear-gradient(90deg,transparent 0 49.7%,#33d4ed15 50% 50.3%,transparent 50.6%),repeating-linear-gradient(0deg,transparent 0 35px,#35587915 36px 37px,transparent 38px 73px);background-size:300px 300px,100% 100%,146px 146px}
+html[data-theme="cybertron-war-room"] .stage-header,html[data-theme="cybertron-war-room"] .rail-panel,html[data-theme="cybertron-war-room"] .start-card,html[data-theme="cybertron-war-room"] .builder-head{border-color:#ff9f3d88;box-shadow:inset 6px 0 #168fa8cc,inset -3px 0 #ff9f3d99,0 20px 46px #000c}
+
+/* Phase-Shift Armor: offset cyan and magenta plates that appear to occupy two positions at once. */
+.app-shell[data-card-border="phase-shift-armor"]{--card-frame:#36d8ee;--card-frame-2:#ff5bbd}
+.app-shell[data-card-border="phase-shift-armor"] .character-border-frame{border:4px solid #36d8ee!important;border-radius:3px 18px 3px 18px!important;clip-path:polygon(0 0,72% 0,78% 7px,100% 7px,100% 100%,28% 100%,22% calc(100% - 7px),0 calc(100% - 7px));box-shadow:-5px 0 0 #ff5bbd88,5px 0 0 #36d8ee77,0 0 22px #36d8ee66,inset 0 0 17px #ff5bbd44!important}
+.app-shell[data-card-border="phase-shift-armor"] .character-border-frame:before{inset:6px -2px 4px 4px;border:1px solid #ffe7fa;transform:translate(3px,-2px);clip-path:polygon(0 0,68% 0,76% 8px,100% 8px,100% 100%,32% 100%,24% calc(100% - 8px),0 calc(100% - 8px))}
+.app-shell[data-card-border="phase-shift-armor"] .character-border-frame:after{inset:1px;background:linear-gradient(135deg,#ff5bbd 0 8px,transparent 9px calc(100% - 9px),#36d8ee calc(100% - 8px)),repeating-linear-gradient(90deg,transparent 0 20px,#36d8ee22 21px 22px);clip-path:inset(3px)}

@@ -185,6 +185,7 @@ const themes = [
   ["verdict-observatory", "Verdict Observatory"],
   ["quintesson-courtline", "Quintesson Courtline"],
   ["tribunal-reckoning", "Tribunal Reckoning"],
+  ["cybertron-war-room", "Cybertron War Room"],
 ] as const;
 const cardBorders = [
   ["energon-edge", "Energon Edge"],
@@ -202,6 +203,7 @@ const cardBorders = [
   ["arbiter-crest", "Arbiter Crest"],
   ["courtline-seal", "Courtline Seal"],
   ["sharkticon-docket", "Sharkticon Docket"],
+  ["phase-shift-armor", "Phase-Shift Armor"],
 ] as const;
 const activeAbilities = new Set([
   "eject",
