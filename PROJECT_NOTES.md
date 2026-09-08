@@ -41,4 +41,8 @@ Character Card border history:
 - Hidden-court targeting update: Quintesson Courtline, a crimson courtroom theme with ivory legal lines, gold docket lighting and radial tribunal geometry.
 - Hidden-court targeting update: Courtline Seal, a split oxblood-and-ivory frame with a central verdict seal and clipped judicial corners.
 - Court reveal and death-notice update: Tribunal Reckoning, a steel tribunal theme with amber judgment light, rust-red sentencing accents and geometric docket lines.
+- Boss Rush scale and control update: Cybertron War Room, a cobalt tactical chamber with orange range rings, cyan holographic lanes and a disciplined command-console silhouette.
 - Court reveal and death-notice update: Sharkticon Docket, a slate docket frame with amber filing marks, shark-bite corner cuts and a red disposal stripe.
+- Boss Rush scale and control update: Phase-Shift Armor, an offset cyan-and-magenta frame whose staggered plates appear to occupy two positions at once.
+- Boss Rush hub and loadout update: Moonbase Relay, a lunar-gray command theme with cobalt relay lanes, copper signal lights and orbital-grid geometry.
+- Boss Rush hub and loadout update: Orbital Clamp, a graphite-and-copper card frame built from squared docking jaws, blue locking rails and luminous corner bolts.

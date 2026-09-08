@@ -185,6 +185,8 @@ const themes = [
   ["verdict-observatory", "Verdict Observatory"],
   ["quintesson-courtline", "Quintesson Courtline"],
   ["tribunal-reckoning", "Tribunal Reckoning"],
+  ["cybertron-war-room", "Cybertron War Room"],
+  ["moonbase-relay", "Moonbase Relay"],
 ] as const;
 const cardBorders = [
   ["energon-edge", "Energon Edge"],
@@ -202,6 +204,8 @@ const cardBorders = [
   ["arbiter-crest", "Arbiter Crest"],
   ["courtline-seal", "Courtline Seal"],
   ["sharkticon-docket", "Sharkticon Docket"],
+  ["phase-shift-armor", "Phase-Shift Armor"],
+  ["orbital-clamp", "Orbital Clamp"],
 ] as const;
 const activeAbilities = new Set([
   "eject",
@@ -394,18 +398,17 @@ function RulesModal() {
           <section>
             <h3>14. Online co-op Quintesson Raid</h3>
             <p>
-              Raid is a separate two-player PvE mode. Each player brings a
-              legal nine-character deck: six deploy and three remain as
-              Backups. Each player places cards on their own highlighted 3 × 3
-              board beside their ally; only the owner can move or attack with
-              those cards. Player 1 takes two actions, Player 2 takes two
-              actions, then the visible Judge and concealed Quintesson court
-              take their boss turn. Player order reverses each round. Defeat
-              the Judge to win; the Raid is lost only when both player teams
-              have no surviving characters.
-              The Bailiff protects the Judge, the Prosecutor marks the weakest
-              target, the Executor punishes wounded characters, and the Judge
-              revives troops or summons Allicons.
+              Raid is a separate two-player PvE mode. Each player brings a legal
+              nine-character deck: six deploy and three remain as Backups. Each
+              player places cards on their own highlighted 3 × 3 board beside
+              their ally; only the owner can move or attack with those cards.
+              Player 1 takes two actions, Player 2 takes two actions, then the
+              visible Judge and concealed Quintesson court take their boss turn.
+              Player order reverses each round. Defeat the Judge to win; the
+              Raid is lost only when both player teams have no surviving
+              characters. The Bailiff protects the Judge, the Prosecutor marks
+              the weakest target, the Executor punishes wounded characters, and
+              the Judge revives troops or summons Allicons.
             </p>
           </section>
         </div>
@@ -770,6 +773,7 @@ function MultiplayerLobby({
     [connected, setConnected] = useState(false),
     [quickSearching, setQuickSearching] = useState(false);
   const [socket, setSocket] = useState<Socket | null>(null);
+  const [section, setSection] = useState<"battle" | "boss-rush">("battle");
   const inRoom = players.length > 0;
   function join() {
     const url = server.trim().replace(/\/$/, "");
@@ -836,14 +840,18 @@ function MultiplayerLobby({
       );
     });
     next.on("quick-match-status", (status: string) => setMessage(status));
-    next.on("room-state", (room: { players: RoomPlayer[]; started: boolean }) => {
-      setPlayers(room.players);
-      if (room.players.length === 2) {
-        setQuickSearching(false);
-        setMessage("Opponent found. Both players can ready up.");
-      }
-      if (room.started) setMessage("Both players are ready. Opening deck building…");
-    });
+    next.on(
+      "room-state",
+      (room: { players: RoomPlayer[]; started: boolean }) => {
+        setPlayers(room.players);
+        if (room.players.length === 2) {
+          setQuickSearching(false);
+          setMessage("Opponent found. Both players can ready up.");
+        }
+        if (room.started)
+          setMessage("Both players are ready. Opening deck building…");
+      },
+    );
     next.on("match-ready", () => onStart(next));
     next.on("connect_error", () => {
       setQuickSearching(false);
@@ -869,82 +877,125 @@ function MultiplayerLobby({
   }
   return (
     <section className="start-card multiplayer-lobby">
-      <p className="eyebrow">ONLINE MULTIPLAYER</p>
-      <h1>Battle a friend</h1>
-      <p className="lead">
-        Create a private room, then give the room code to one friend. The Render
-        server keeps the room and both players connected.
-      </p>
-      <div className="setup-grid">
-        <label>
-          Render server address
-          <input
-            value={server}
-            onChange={(e) => setServer(e.target.value)}
-            placeholder="https://hidden-front.onrender.com"
-          />
-        </label>
-        <label>
-          Your name
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Player name"
-            maxLength={20}
-          />
-        </label>
-        <label>
-          Room code
-          <input
-            value={code}
-            onChange={(e) => setCode(e.target.value.toUpperCase())}
-            placeholder="E.G. PRIME9"
-            maxLength={12}
-          />
-        </label>
-      </div>
-      {inRoom ? (
-        <div className="lobby-players">
-          {players.map((player) => (
-            <div key={player.id}>
-              <b>{player.name}</b>
-              <span>{player.ready ? "READY" : "CHOOSING DECK"}</span>
-            </div>
-          ))}
-        </div>
-      ) : null}
-      <p className="lobby-message">{message}</p>
-      <div className="lobby-actions">
-        {!inRoom ? (
-          quickSearching ? (
-            <button className="primary" onClick={cancelQuickMatch}>
-              Cancel Quick Match
-            </button>
-          ) : (
-            <>
-              <button className="primary" onClick={quickMatch}>
-                <Zap size={17} /> Quick Match
-              </button>
-              <button className="ghost" onClick={join}>
-                Connect to room
-              </button>
-            </>
-          )
-        ) : (
-          <button className="primary" disabled={!connected} onClick={ready}>
-            I am ready
-          </button>
-        )}
-        <button className="ghost" onClick={onSolo}>
-          Back to solo game
+      <nav className="multiplayer-tabs" aria-label="Multiplayer modes">
+        <button
+          className={section === "battle" ? "active" : ""}
+          disabled={inRoom}
+          onClick={() => setSection("battle")}
+        >
+          Standard Battle
         </button>
-      </div>
+        <button
+          className={section === "boss-rush" ? "active" : ""}
+          disabled={inRoom}
+          onClick={() => setSection("boss-rush")}
+        >
+          Boss Rush
+        </button>
+      </nav>
+      {section === "battle" ? (
+        <>
+          <p className="eyebrow">ONLINE MULTIPLAYER</p>
+          <h1>Battle a friend</h1>
+          <p className="lead">
+            Create a private room, then give the room code to one friend. The
+            Render server keeps the room and both players connected.
+          </p>
+          <div className="setup-grid">
+            <label>
+              Render server address
+              <input
+                value={server}
+                onChange={(e) => setServer(e.target.value)}
+                placeholder="https://hidden-front.onrender.com"
+              />
+            </label>
+            <label>
+              Your name
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Player name"
+                maxLength={20}
+              />
+            </label>
+            <label>
+              Room code
+              <input
+                value={code}
+                onChange={(e) => setCode(e.target.value.toUpperCase())}
+                placeholder="E.G. PRIME9"
+                maxLength={12}
+              />
+            </label>
+          </div>
+          {inRoom ? (
+            <div className="lobby-players">
+              {players.map((player) => (
+                <div key={player.id}>
+                  <b>{player.name}</b>
+                  <span>{player.ready ? "READY" : "CHOOSING DECK"}</span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          <p className="lobby-message">{message}</p>
+          <div className="lobby-actions">
+            {!inRoom ? (
+              quickSearching ? (
+                <button className="primary" onClick={cancelQuickMatch}>
+                  Cancel Quick Match
+                </button>
+              ) : (
+                <>
+                  <button className="primary" onClick={quickMatch}>
+                    <Zap size={17} /> Quick Match
+                  </button>
+                  <button className="ghost" onClick={join}>
+                    Connect to room
+                  </button>
+                </>
+              )
+            ) : (
+              <button className="primary" disabled={!connected} onClick={ready}>
+                I am ready
+              </button>
+            )}
+          </div>
+        </>
+      ) : (
+        <section className="boss-rush-hub">
+          <p className="eyebrow">CO-OP BOSS BATTLES</p>
+          <h1>Boss Rush</h1>
+          <p className="lead">
+            Choose a boss encounter. More Boss Rush battles can be added here
+            without crowding the main menu.
+          </p>
+          <Link className="boss-rush-entry" href="/raid">
+            <Skull size={30} />
+            <span>
+              <b>Quintesson Raid</b>
+              <small>
+                Two players against the Judge and his concealed court.
+              </small>
+            </span>
+            <strong>ENTER RAID</strong>
+          </Link>
+        </section>
+      )}
+      <button className="ghost multiplayer-back" onClick={onSolo}>
+        Back to main menu
+      </button>
     </section>
   );
 }
 
 function minimaxBoardValue(board: Slot[]) {
-  return board.reduce((score, unit) => score + (unit ? unit.hp + (unit.hp <= unit.max / 2 ? 4 : 0) : 0), 0);
+  return board.reduce(
+    (score, unit) =>
+      score + (unit ? unit.hp + (unit.hp <= unit.max / 2 ? 4 : 0) : 0),
+    0,
+  );
 }
 
 function minimaxEnemyTarget(
@@ -960,20 +1011,35 @@ function minimaxEnemyTarget(
   const spaces = Array.from({ length: board.length }, (_, index) => index),
     knownOccupied = new Set(knowledge.occupied),
     knownEmpty = new Set(knowledge.empty),
-    unknown = () => spaces.filter((index) => !knownOccupied.has(index) && !knownEmpty.has(index)),
+    unknown = () =>
+      spaces.filter(
+        (index) => !knownOccupied.has(index) && !knownEmpty.has(index),
+      ),
     expectedOccupancy = () => {
       const hidden = unknown();
-      return hidden.length ? Math.min(1, Math.max(0, 6 - knownOccupied.size) / hidden.length) : 0;
+      return hidden.length
+        ? Math.min(1, Math.max(0, 6 - knownOccupied.size) / hidden.length)
+        : 0;
     },
     targetValue = (target: number) => {
       const known = knownOccupied.has(target),
         probability = known ? 1 : expectedOccupancy(),
         centerBonus = target % 3 === 1 ? 7 : 0;
-      return probability * (attacker.dmg * 12 + 28) + centerBonus + (known ? 90 : 0);
+      return (
+        probability * (attacker.dmg * 12 + 28) + centerBonus + (known ? 90 : 0)
+      );
     };
-  const search = (occupied: Set<number>, empty: Set<number>, remaining: number, maximizing: boolean): number => {
+  const search = (
+    occupied: Set<number>,
+    empty: Set<number>,
+    remaining: number,
+    maximizing: boolean,
+  ): number => {
     const candidates = spaces.filter((index) => !empty.has(index));
-    if (!candidates.length || remaining <= 0) return occupied.size * 82 + (spaces.length - occupied.size - empty.size) * 58;
+    if (!candidates.length || remaining <= 0)
+      return (
+        occupied.size * 82 + (spaces.length - occupied.size - empty.size) * 58
+      );
     const scores = candidates.map((target) => {
       const hit = new Set(occupied);
       hit.add(target);
@@ -981,8 +1047,16 @@ function minimaxEnemyTarget(
       miss.add(target);
       const hitScore = search(hit, empty, remaining - 1, !maximizing),
         missScore = search(occupied, miss, remaining - 1, !maximizing),
-        probability = occupied.has(target) ? 1 : Math.min(1, Math.max(0, 6 - occupied.size) / Math.max(1, spaces.length - occupied.size - empty.size)),
-        score = targetValue(target) + (probability * hitScore + (1 - probability) * missScore) * 0.15;
+        probability = occupied.has(target)
+          ? 1
+          : Math.min(
+              1,
+              Math.max(0, 6 - occupied.size) /
+                Math.max(1, spaces.length - occupied.size - empty.size),
+            ),
+        score =
+          targetValue(target) +
+          (probability * hitScore + (1 - probability) * missScore) * 0.15;
       return maximizing ? score : -score;
     });
     return maximizing ? Math.max(...scores) : Math.min(...scores);
@@ -996,10 +1070,11 @@ function minimaxEnemyTarget(
       const miss = new Set(knownEmpty);
       miss.add(target);
       const probability = knownOccupied.has(target) ? 1 : expectedOccupancy(),
-        score = targetValue(target) + (
-          probability * search(hit, knownEmpty, depth - 1, false) +
-          (1 - probability) * search(knownOccupied, miss, depth - 1, false)
-        ) * 0.15;
+        score =
+          targetValue(target) +
+          (probability * search(hit, knownEmpty, depth - 1, false) +
+            (1 - probability) * search(knownOccupied, miss, depth - 1, false)) *
+            0.15;
       return { target, score };
     })
     .sort((a, b) => b.score - a.score)[0].target;
@@ -3328,9 +3403,6 @@ export default function Home() {
           <button className="ghost" onClick={() => setPhase("multiplayer")}>
             <Users size={17} /> Multiplayer
           </button>
-          <Link className="ghost raid-entry" href="/raid">
-            <Skull size={17} /> Quintesson Raid
-          </Link>
         </div>
       </section>,
     );
