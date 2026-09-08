@@ -37,7 +37,7 @@ const expected = {
   barrage: ["Barrage", "Decepticon", "Scout", 40, 5],
   cyclonus: ["Cyclonus", "Decepticon", "Trooper", 80, 20],
   "lio-convoy": ["Lio Convoy", "Maximal", "Commander", 100, 15],
-  "autobot-allicon": ["Allicon", "Autobot", "Scout", 50, 10],
+  cliffjumper: ["Cliffjumper", "Autobot", "Scout", 50, 10],
   cosmos: ["Cosmos", "Autobot", "Tactician", 50, 15],
   dion: ["Dion", "Autobot", "Tactician", 70, 10],
   firestar: ["Firestar", "Autobot", "Scout", 50, 10],
@@ -53,6 +53,23 @@ const expected = {
   razorbeast: ["Razorbeast", "Maximal", "Scout", 50, 10],
   "ultra-mammoth": ["Ultra Mammoth", "Maximal", "Commander", 80, 20],
   wolfang: ["Wolfang", "Maximal", "Scout", 40, 5],
+  "air-raid": ["Air Raid", "Autobot", "Trooper", 60, 25],
+  "alpha-trion": ["Alpha Trion", "Autobot", "Commander", 100, 15],
+  beachcomber: ["Beachcomber", "Autobot", "Scout", 40, 5],
+  blades: ["Blades", "Autobot", "Scout", 40, 5],
+  blaster: ["Blaster", "Autobot", "Tactician", 70, 10],
+  bluestreak: ["Bluestreak", "Autobot", "Trooper", 80, 20],
+  blurr: ["Blurr", "Autobot", "Trooper", 80, 20],
+  brainstorm: ["Brainstorm", "Autobot", "Tactician", 70, 10],
+  chromia: ["Chromia", "Autobot", "Tactician", 50, 15],
+  dirge: ["Dirge", "Decepticon", "Trooper", 80, 20],
+  "drag-strip": ["Drag Strip", "Decepticon", "Trooper", 80, 20],
+  dropshot: ["Dropshot", "Decepticon", "Scout", 50, 10],
+  misfire: ["Misfire", "Decepticon", "Tactician", 80, 20],
+  mixmaster: ["Mixmaster", "Decepticon", "Trooper", 80, 20],
+  motormaster: ["Motormaster", "Decepticon", "Commander", 80, 20],
+  "nemesis-prime": ["Nemesis Prime", "Decepticon", "Commander", 80, 20],
+  ramjet: ["Ramjet", "Decepticon", "Tactician", 50, 15],
 };
 
 test("all newly supplied characters have the printed names, teams, classes and stats", () => {
@@ -69,15 +86,14 @@ test("all newly supplied characters have the printed names, teams, classes and s
       {
         maxgrimlock: "maximal-grimlock",
         optimal: "optimal-optimus",
-        "autobot-allicon": "autobot-allicon",
       }[id] || id;
     assert.equal(unit.image, `/cards/characters/${imageName}.png`);
   }
 });
 
 test("the expanded faction totals stay correct", () => {
-  assert.equal(rosters.Autobot.length, 20);
-  assert.equal(rosters.Decepticon.length, 21);
+  assert.equal(rosters.Autobot.length, 29);
+  assert.equal(rosters.Decepticon.length, 29);
   assert.equal(rosters.Predacon.length, 18);
   assert.equal(rosters.Maximal.length, 18);
 });

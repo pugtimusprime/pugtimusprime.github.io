@@ -5,10 +5,14 @@ import { allUnits } from "../lib/card-data.ts";
 import {
   applyBoardAuras,
   applyCharacterAttackDamage,
+  applyDeckPassives,
+  applyRoundPassives,
   attackLimit,
   canRhinoxRevive,
   isBattleCardImmune,
   isPredaconAbilityImmune,
+  isCharacterAbilityImmune,
+  repositionBlurr,
   reviveAtHalf,
   shouldLayDepthchargeMine,
   healFaction,
@@ -83,7 +87,7 @@ const abilitySignals = {
   tarantulas: /extra Battle Card/i,
   "transmetal-tarantulas": /heal Transmetal Tarantulas by 15/i,
   "lio-convoy": /cannot be detected/i,
-  "autobot-allicon": /2 Battle Cards/i,
+  cliffjumper: /2 Battle Cards/i,
   cosmos: /Tacticians are fully visible/i,
   dion: /Transfer Dion's Health/i,
   firestar: /swap positions/i,
@@ -99,6 +103,23 @@ const abilitySignals = {
   razorbeast: /defeated Maximal/i,
   "ultra-mammoth": /4 times/i,
   wolfang: /\+10 Damage to Predacons/i,
+  "air-raid": /Troopers \+10 Damage for 2 rounds/i,
+  "alpha-trion": /Autobots.*\+5 maximum Health/i,
+  beachcomber: /cannot attack.*loses 10 Health/i,
+  blades: /enemy scraps every Battle Card/i,
+  blaster: /Eject or Steeljaw.*\+10 Damage/i,
+  bluestreak: /position is revealed for 2 rounds/i,
+  blurr: /random vacant space/i,
+  brainstorm: /locked Turret with 20 Health and 15 Damage/i,
+  chromia: /heal its occupant by 10 for 3 rounds/i,
+  dirge: /heals 5 Health/i,
+  "drag-strip": /Duplicate one Battle Card/i,
+  dropshot: /last living Scout.*\+15 maximum Health/i,
+  misfire: /\+5 Damage when attacking Tacticians/i,
+  mixmaster: /Bonecrusher.*attack twice/i,
+  motormaster: /Optimus Prime.*draw 3 Battle Cards/i,
+  "nemesis-prime": /copy your other Commander's ability.*\+5 Damage/i,
+  ramjet: /Ignore non-Decepticon character abilities for 3 rounds/i,
 };
 
 test("every character ability has an explicit regression case", async (t) => {
@@ -272,5 +293,53 @@ test("Lio Convoy's protection requires a full nine-card Maximal team", () => {
   assert.equal(
     isFullFactionTeam([...full.slice(0, 8), maximal("quickstrike")], "Maximal"),
     false,
+  );
+});
+
+test("the new passive abilities change deck and round state", () => {
+  const alpha = maximal("alpha-trion"),
+    blaster = maximal("blaster"),
+    eject = maximal("eject"),
+    beachcomber = maximal("beachcomber"),
+    prepared = applyDeckPassives([alpha, blaster, eject, beachcomber]);
+  assert.equal(prepared.find((unit) => unit.id === "eject").max, 45);
+  assert.equal(prepared.find((unit) => unit.id === "eject").dmg, 15);
+  assert.equal(prepared.find((unit) => unit.id === "beachcomber").canAttack, false);
+  const roundBoard = applyRoundPassives(
+    [
+      { ...maximal("dirge"), hp: 50 },
+      { ...maximal("dropshot") },
+      { ...maximal("brainstorm"), brainstormDeployedRound: 1 },
+      null,
+    ],
+    4,
+  );
+  assert.equal(roundBoard[0].hp, 55);
+  assert.equal(roundBoard[1].max, 65);
+  assert.equal(roundBoard[3].name, "Brainstorm Turret");
+});
+
+test("Blurr, Mixmaster and Ramjet enforce their special rules", () => {
+  const blurr = maximal("blurr"),
+    moved = repositionBlurr([blurr, null], 2, () => 0);
+  assert.equal(moved[0], null);
+  assert.equal(moved[1].id, "blurr");
+  const mixmaster = maximal("mixmaster");
+  assert.equal(
+    attackLimit({
+      unit: mixmaster,
+      board: [mixmaster, { ...maximal("dirge"), id: "bonecrusher" }, maximal("ramjet")],
+      deck: [],
+      round: 2,
+    }),
+    2,
+  );
+  assert.equal(
+    isCharacterAbilityImmune(
+      { ...maximal("ramjet"), ramjetImmuneUntil: 3 },
+      "Autobot",
+      2,
+    ),
+    true,
   );
 });

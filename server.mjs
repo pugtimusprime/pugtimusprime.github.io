@@ -2,6 +2,11 @@ import { createServer } from "node:http";
 import express from "express";
 import { Server } from "socket.io";
 import { allUnits, bossRushBattleCards, makeBossRushBattleDeck } from "./lib/card-data.ts";
+import {
+  applyDeckPassives,
+  applyRoundPassives,
+  repositionBlurr,
+} from "./lib/combat-engine.mjs";
 
 const app = express();
 const httpServer = createServer(app);
@@ -93,7 +98,9 @@ function freshRaidUnit(unit) {
 }
 function legalRaidDeck(ids) {
   if (!Array.isArray(ids) || ids.length !== 9 || new Set(ids).size !== 9 || ids.some((id) => typeof id !== "string" || !raidCharacterById.has(id))) return null;
-  const units = ids.map((id) => freshRaidUnit(raidCharacterById.get(id)));
+  const units = applyDeckPassives(
+    ids.map((id) => freshRaidUnit(raidCharacterById.get(id))),
+  );
   const roles = { Commander: 0, Scout: 0, Trooper: 0, Tactician: 0 };
   for (const unit of units) roles[unit.role] += 1;
   return roles.Commander === 2 && roles.Scout === 3 && roles.Trooper === 2 && roles.Tactician === 2 ? units : null;
@@ -393,6 +400,8 @@ function summonOrRevive(room) {
 function reinforceRaidTeam(room, team, slot) {
   if (!team.backups.length) return;
   const replacement = team.backups.shift();
+  if (replacement.id === "brainstorm")
+    replacement.brainstormDeployedRound = room.round;
   team.board[slot] = replacement;
   room.log.push(`${replacement.name} reinforced its owner's 3 x 3 board.`);
 }
@@ -468,6 +477,10 @@ function raidBossTurn(room) {
     )
       damage = 0;
     chosen.unit.hp = Math.max(0, chosen.unit.hp - damage);
+    if (chosen.unit.id === "beachcomber" && damage > 0) {
+      attacker.hp = Math.max(0, attacker.hp - 10);
+      room.log.push("Beachcomber's pacifist field dealt 10 damage back to the attacker.");
+    }
     if (chosen.unit.id === "hun-grrr" && damage > 0)
       chosen.unit.hunGrrrEligible = false;
     if (chosen.unit.hp === 0 && room.holdLine) {
@@ -501,6 +514,15 @@ function raidBossTurn(room) {
       const team = room.teams.get(chosen.playerId);
       team.board[chosen.slot] = null;
       team.fallen = [...(team.fallen || []), chosen.unit];
+      if (
+        chosen.unit.id === "blades" &&
+        [...team.board, ...team.backups, ...(team.fallen || [])].some(
+          (unit) => unit?.id === "brawn",
+        )
+      ) {
+        room.battleHand = [];
+        room.log.push("Blades fell beside Brawn; the shared Battle Card hand was scrapped.");
+      }
       reinforceRaidTeam(room, team, chosen.slot);
       raidEvent(room, {
         kind: "player-defeat",
@@ -532,6 +554,15 @@ function raidBossTurn(room) {
 function startRaidRound(room) {
   room.round += 1;
   for (const team of room.teams.values()) {
+    team.board = applyRoundPassives(
+      room.round > 1
+        ? repositionBlurr(team.board, room.round - 1)
+        : team.board,
+      room.round,
+      team.backups,
+    );
+  }
+  for (const team of room.teams.values()) {
     const requiredRound = team.hunGrrrWinRound || 5;
     const hunGrrr = team.board.find(
       (unit) =>
@@ -558,14 +589,14 @@ function startRaidRound(room) {
   room.battlePlayed = false;
   room.courtFeedback.clear();
   if (room.round === 1) revealRandomBossTroop(room);
-  const alliconOpening =
+  const cliffjumperOpening =
     room.round === 1 &&
     [...room.teams.values()].some((team) =>
       [...team.board, ...team.backups].some(
-        (unit) => unit?.id === "autobot-allicon",
+        (unit) => unit?.id === "cliffjumper",
       ),
     );
-  drawRaidCards(room, alliconOpening ? 2 : 1);
+  drawRaidCards(room, cliffjumperOpening ? 2 : 1);
   if (
     room.round <= 2 &&
     [...room.teams.values()].some((team) =>
@@ -609,6 +640,11 @@ function raidAttackDamage(room, team, attacker, slot) {
       : attacker.dmg;
   if (attacker.id === "bee" && team.board.some((unit) => unit?.faction === "Autobot" && unit.role === "Commander")) damage += 5;
   if (team.board.some((unit, index) => unit?.id === "quickstrike" && Math.floor(index / 3) === Math.floor(slot / 3))) damage += 5;
+  if (
+    attacker.role === "Trooper" &&
+    (attacker.airRaidBoostUntil || 0) >= room.round
+  )
+    damage += 10;
   if (attacker.raidWheeljackBoost) {
     damage += 5;
     attacker.raidWheeljackBoost = false;
@@ -1231,6 +1267,8 @@ io.on("connection", (socket) => {
     team.board[slot] = team.pending.splice(index, 1)[0];
     if (team.board[slot].id === "hun-grrr")
       team.board[slot].hunGrrrEligible = true;
+    if (team.board[slot].id === "brainstorm")
+      team.board[slot].brainstormDeployedRound = 1;
     room.log.push(`${room.players.get(socket.id)?.name || "Player"} placed a character in their 3 x 3 board space ${slot + 1}.`);
     reply({ ok: true });
     if (room.teams.size === 2 && [...room.teams.values()].every((entry) => entry.pending.length === 0)) {
@@ -1261,6 +1299,9 @@ io.on("connection", (socket) => {
         attacker.id === "ultra-mammoth" &&
         attacker.raidRushRound === room.round
           ? 4
+          : attacker.id === "mixmaster" &&
+              team.board.some((unit) => unit?.id === "bonecrusher")
+            ? 2
           : 1;
     if (previousAttacks >= attackLimit)
       return reply({
@@ -1283,6 +1324,8 @@ io.on("connection", (socket) => {
       return;
     }
     let damage = raidAttackDamage(room, team, attacker, attackerSlot);
+    if (attacker.id === "misfire" && target.unit.role === "Tactician")
+      damage += 5;
     damage = applyRaidBattleAttackBonuses(room, socket.id, attacker, target, damage);
     damage = resolveBossDamage(room, target, damage);
     if (target.slot >= 0) room.courtFeedback.set(target.slot, "OCCUPIED");
@@ -1298,6 +1341,10 @@ io.on("connection", (socket) => {
       defeated: target.unit.hp === 0,
     });
     if (target.unit.hp === 0) defeatRaidBossUnit(room, target);
+    if (target.unit.id === "beachcomber" && damage > 0) {
+      attacker.hp = Math.max(0, attacker.hp - 10);
+      room.log.push("Beachcomber's pacifist field dealt 10 damage back to " + attacker.name + ".");
+    }
     if (attacker.raidOverchargeBacklash) {
       attacker.raidOverchargeBacklash = false;
       attacker.hp = Math.max(0, attacker.hp - 15);
@@ -1692,6 +1739,60 @@ io.on("connection", (socket) => {
         team.board[sourceSlot],
       ];
       effect = "Firestar swapped positions with a damaged ally.";
+    } else if (sourceId === "air-raid") {
+      team.board.forEach((unit) => {
+        if (unit?.role === "Trooper") unit.airRaidBoostUntil = room.round + 1;
+      });
+      effect = "Air Raid gave every friendly Trooper +10 Damage for two rounds.";
+    } else if (sourceId === "chromia") {
+      if (source.hp <= 10)
+        return reply({
+          ok: false,
+          error: "Chromia needs more than 10 Health to power a healing zone.",
+        });
+      const healSlot = Number.isInteger(targetSlot) && targetSlot >= 0 && targetSlot < 9
+        ? targetSlot
+        : sourceSlot;
+      source.hp -= 10;
+      source.chromiaHealSlot = healSlot;
+      source.chromiaHealUntil = room.round + 3;
+      effect = "Chromia powered board space " + (healSlot + 1) + " as a three-round healing zone.";
+    } else if (sourceId === "drag-strip") {
+      if (!room.battleHand.length)
+        return reply({
+          ok: false,
+          error: "Drag Strip needs a shared Battle Card to duplicate.",
+        });
+      const copied = room.battleHand[0];
+      room.battleHand.push(copied);
+      effect = "Drag Strip duplicated " + copied + ".";
+    } else if (sourceId === "motormaster") {
+      return reply({
+        ok: false,
+        error: "Motormaster requires Optimus Prime on the enemy team; the Quintesson court does not satisfy that condition.",
+      });
+    } else if (sourceId === "nemesis-prime") {
+      if (room.round !== 1)
+        return reply({
+          ok: false,
+          error: "Nemesis Prime can only clone a Commander during round 1.",
+        });
+      const commander = team.board.find(
+        (unit) => unit?.role === "Commander" && unit.id !== sourceId,
+      );
+      if (!commander)
+        return reply({
+          ok: false,
+          error: "Nemesis Prime needs the other Commander deployed.",
+        });
+      source.copiedCommanderId = commander.id;
+      source.dmg += 5;
+      source.nemesisCopied = true;
+      source.abilityUses = 2;
+      effect = "Nemesis Prime cloned " + commander.name + " and gained +5 Damage.";
+    } else if (sourceId === "ramjet") {
+      source.ramjetImmuneUntil = room.round + 2;
+      effect = "Ramjet ignores non-Decepticon character abilities for three rounds.";
     } else if (sourceId === "cyclonus") {
       team.board
         .filter((unit) => unit?.faction === "Decepticon")
@@ -1771,7 +1872,16 @@ io.on("connection", (socket) => {
         ok: false,
         error: "Choose one of your own cards and a valid space on your 3 x 3 board.",
       });
+    if (team.board[from]?.locked)
+      return reply({
+        ok: false,
+        error: "That locked emplacement cannot be repositioned.",
+      });
     [team.board[from], team.board[to]] = [team.board[to], team.board[from]];
+    team.board.forEach((unit) => {
+      if (unit?.id === "blurr" && (unit === team.board[to] || unit === team.board[from]))
+        unit.blurrLastMovedRound = room.round;
+    });
     const intel = raidIntel(room, socket.id);
     [from, to].forEach((slot) => {
       intel.occupied.delete(slot);
@@ -1804,7 +1914,13 @@ io.on("connection", (socket) => {
     const backupIndex = team.backups.findIndex((unit) => unit.id === backupId);
     if (backupIndex < 0) return reply({ ok: false, error: "That Backup is unavailable." });
     const replaced = team.board[slot];
+    if (replaced.locked)
+      return reply({ ok: false, error: "A locked emplacement cannot be swapped out." });
     const replacement = team.backups.splice(backupIndex, 1)[0];
+    if (replacement.id === "brainstorm")
+      replacement.brainstormDeployedRound = room.round;
+    if (replacement.id === "blurr")
+      replacement.blurrLastMovedRound = room.round;
     team.board[slot] = replacement;
     team.backups.push(replaced);
     const intel = raidIntel(room, socket.id);

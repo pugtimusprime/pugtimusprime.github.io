@@ -29,6 +29,17 @@ export type Unit = {
   wolfangBoostRound?: number;
   ultraMammothRushRound?: number;
   hunGrrrEligible?: boolean;
+  airRaidBoostUntil?: number;
+  blurrLastMovedRound?: number;
+  brainstormDeployedRound?: number;
+  brainstormTurretPlaced?: boolean;
+  chromiaHealUntil?: number;
+  chromiaHealSlot?: number;
+  dropshotBoosted?: boolean;
+  ramjetImmuneUntil?: number;
+  nemesisCopied?: boolean;
+  locked?: boolean;
+  bluestreakMarkedUntil?: number;
 };
 export type Slot = Unit | null;
 export type BattleInfo = {
@@ -178,12 +189,12 @@ const rows: Record<
       1,
     ],
     [
-      "autobot-allicon",
-      "Allicon",
+      "cliffjumper",
+      "Cliffjumper",
       "Scout",
       50,
       10,
-      "If Allicon is in your deck, start the game with 2 Battle Cards instead of 1.",
+      "If Cliffjumper is in your deck, start the game with 2 Battle Cards instead of 1.",
       0,
     ],
     [
@@ -221,6 +232,87 @@ const rows: Record<
       25,
       "While deployed, Mirage reports an enemy attack as a miss even when it hits. 3 uses.",
       3,
+    ],
+    [
+      "air-raid",
+      "Air Raid",
+      "Trooper",
+      60,
+      25,
+      "Give all friendly Troopers +10 Damage for 2 rounds. 1 use.",
+      1,
+    ],
+    [
+      "alpha-trion",
+      "Alpha Trion",
+      "Commander",
+      100,
+      15,
+      "All Autobots in your deck gain +5 maximum Health.",
+      0,
+    ],
+    [
+      "beachcomber",
+      "Beachcomber",
+      "Scout",
+      40,
+      5,
+      "Beachcomber cannot attack. Any character that attacks him loses 10 Health.",
+      0,
+    ],
+    [
+      "blades",
+      "Blades",
+      "Scout",
+      40,
+      5,
+      "If Brawn is in your deck when Blades dies, the enemy scraps every Battle Card in their hand.",
+      0,
+    ],
+    [
+      "blaster",
+      "Blaster",
+      "Tactician",
+      70,
+      10,
+      "If Eject or Steeljaw is in your deck, those characters gain +10 Damage.",
+      0,
+    ],
+    [
+      "bluestreak",
+      "Bluestreak",
+      "Trooper",
+      80,
+      20,
+      "When an Autobot attacks Bluestreak, that attacker's position is revealed for 2 rounds.",
+      0,
+    ],
+    [
+      "blurr",
+      "Blurr",
+      "Trooper",
+      80,
+      20,
+      "At the end of each round, Blurr moves to a random vacant space unless you repositioned him that round.",
+      0,
+    ],
+    [
+      "brainstorm",
+      "Brainstorm",
+      "Tactician",
+      70,
+      10,
+      "After 3 rounds deployed, place a locked Turret with 20 Health and 15 Damage in a vacant space.",
+      0,
+    ],
+    [
+      "chromia",
+      "Chromia",
+      "Tactician",
+      50,
+      15,
+      "Spend 10 Health to make a friendly board space heal its occupant by 10 for 3 rounds. 1 use.",
+      1,
     ],
   ],
   Decepticon: [
@@ -411,6 +503,78 @@ const rows: Record<
       80,
       20,
       "Heal every Decepticon on your team by 5. 1 use.",
+      1,
+    ],
+    [
+      "dirge",
+      "Dirge",
+      "Trooper",
+      80,
+      20,
+      "Dirge heals 5 Health at the start of every round.",
+      0,
+    ],
+    [
+      "drag-strip",
+      "Drag Strip",
+      "Trooper",
+      80,
+      20,
+      "Duplicate one Battle Card from your hand. 1 use.",
+      1,
+    ],
+    [
+      "dropshot",
+      "Dropshot",
+      "Scout",
+      50,
+      10,
+      "When Dropshot is the last living Scout on your team, he gains +15 maximum Health.",
+      0,
+    ],
+    [
+      "misfire",
+      "Misfire",
+      "Tactician",
+      80,
+      20,
+      "Misfire deals +5 Damage when attacking Tacticians.",
+      0,
+    ],
+    [
+      "mixmaster",
+      "Mixmaster",
+      "Trooper",
+      80,
+      20,
+      "If Bonecrusher is deployed, Mixmaster may attack twice each round.",
+      0,
+    ],
+    [
+      "motormaster",
+      "Motormaster",
+      "Commander",
+      80,
+      20,
+      "If Optimus Prime is on the enemy team, draw 3 Battle Cards. 1 use.",
+      1,
+    ],
+    [
+      "nemesis-prime",
+      "Nemesis Prime",
+      "Commander",
+      80,
+      20,
+      "At the start of round 1, copy your other Commander's ability and gain +5 Damage. 1 use.",
+      1,
+    ],
+    [
+      "ramjet",
+      "Ramjet",
+      "Tactician",
+      50,
+      15,
+      "Ignore non-Decepticon character abilities for 3 rounds; Battle Cards still affect Ramjet. 1 use.",
       1,
     ],
   ],
@@ -761,7 +925,6 @@ const imageNames: Record<string, string> = {
   thunder: "thundercracker",
   maxgrimlock: "maximal-grimlock",
   optimal: "optimal-optimus",
-  "autobot-allicon": "autobot-allicon",
 };
 export const rosters = Object.fromEntries(
   Object.entries(rows).map(([faction, units]) => [

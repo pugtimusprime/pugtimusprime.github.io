@@ -102,11 +102,37 @@ test("the sixteen-card expansion is mirrored into the GitHub Pages root", () => 
     "razorbeast",
     "ultra-mammoth",
     "wolfang",
-    "autobot-allicon",
+    "cliffjumper",
     "cosmos",
     "dion",
     "firestar",
     "mirage",
+  ])
+    assert.deepEqual(
+      readAsset(`/public/cards/characters/${name}.png`),
+      readAsset(`/cards/characters/${name}.png`),
+    );
+});
+
+test("the seventeen-card expansion is mirrored into the GitHub Pages root", () => {
+  for (const name of [
+    "air-raid",
+    "alpha-trion",
+    "beachcomber",
+    "blades",
+    "blaster",
+    "bluestreak",
+    "blurr",
+    "brainstorm",
+    "chromia",
+    "dirge",
+    "drag-strip",
+    "dropshot",
+    "misfire",
+    "mixmaster",
+    "motormaster",
+    "nemesis-prime",
+    "ramjet",
   ])
     assert.deepEqual(
       readAsset(`/public/cards/characters/${name}.png`),

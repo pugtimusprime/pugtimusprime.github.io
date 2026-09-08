@@ -41,13 +41,16 @@ import {
 import {
   applyBoardAuras,
   applyCharacterAttackDamage,
+  applyDeckPassives,
   applyDamage,
+  applyRoundPassives,
   attackLimit,
   canPlayBattleCard,
   canRhinoxRevive,
   hiddenAttackMessage,
   isBattleCardImmune,
   isPredaconAbilityImmune,
+  isCharacterAbilityImmune,
   isFullFactionTeam,
   hasTarantulasDraw,
   healFaction,
@@ -56,6 +59,7 @@ import {
   hunGrrrWins,
   lastStandDamage,
   reposition,
+  repositionBlurr,
   resolveTrap,
   reviveAtHalf,
   shouldLayDepthchargeMine,
@@ -107,7 +111,9 @@ type Interaction = {
     | "rhinox"
     | "cutthroat"
     | "dion"
-    | "firestar";
+    | "firestar"
+    | "chromia"
+    | "drag-strip";
   actor?: number;
   name?: string;
   cardIndex?: number;
@@ -198,6 +204,7 @@ const themes = [
   ["titan-siege-command", "Titan Siege Command"],
   ["vector-sigma-dawn", "Vector Sigma Dawn"],
   ["terrorcon-crucible", "Terrorcon Crucible"],
+  ["aerialbot-skyforge", "Aerialbot Skyforge"],
 ] as const;
 const cardBorders = [
   ["energon-edge", "Energon Edge"],
@@ -220,6 +227,7 @@ const cardBorders = [
   ["raidbreaker-frame", "Raidbreaker Frame"],
   ["spark-forge-frame", "Spark Forge Frame"],
   ["mammoth-tusk-frame", "Mammoth Tusk Frame"],
+  ["seeker-contrail-frame", "Seeker Contrail Frame"],
 ] as const;
 const activeAbilities = new Set([
   "eject",
@@ -254,6 +262,12 @@ const activeAbilities = new Set([
   "wolfang",
   "dion",
   "firestar",
+  "air-raid",
+  "chromia",
+  "drag-strip",
+  "motormaster",
+  "nemesis-prime",
+  "ramjet",
 ]);
 const targetAbility = new Set([
   "eject",
@@ -1725,25 +1739,29 @@ export default function Home() {
         );
       return;
     }
-    const roster = (
-      enemyFaction === "Random" ? randomEnemyDeck() : enemyDeck(enemyFaction)
-    ).map((unit) => ({
-      ...unit,
-      hp: unit.max,
-      canAttack: true,
-      shield: unit.id === "terror" ? 1 : 0,
-    }));
+    const roster = applyDeckPassives(
+      (enemyFaction === "Random" ? randomEnemyDeck() : enemyDeck(enemyFaction)).map(
+        (unit) => ({
+          ...unit,
+          hp: unit.max,
+          canAttack: unit.id !== "beachcomber",
+          shield: unit.id === "terror" ? 1 : 0,
+        }),
+      ),
+    );
     setEnemyRoster(roster);
     setEnemyScrap([]);
     setPhase("opponent");
   }
   function beginDeployment() {
-    const chosenDeck = built.map((x) => ({
-        ...x,
-        hp: x.max,
-        canAttack: true,
-        shield: x.id === "terror" ? 1 : 0,
-      })),
+    const chosenDeck = applyDeckPassives(
+        built.map((x) => ({
+          ...x,
+          hp: x.max,
+          canAttack: x.id !== "beachcomber",
+          shield: x.id === "terror" ? 1 : 0,
+        })),
+      ),
       enemy = shuffled(enemyRoster.map((unit) => ({ ...unit })));
     const enemySlots = shuffled([0, 1, 2, 3, 4, 5, 6, 7, 8]).slice(0, 6),
       eBoard: Slot[] = Array(9).fill(null);
@@ -1820,7 +1838,11 @@ export default function Home() {
     const pile = makeBattleDeck(),
       deployed = applyBoardAuras(
         board.map((unit) =>
-          unit?.id === "hun-grrr" ? { ...unit, hunGrrrEligible: true } : unit,
+          unit?.id === "hun-grrr"
+            ? { ...unit, hunGrrrEligible: true }
+            : unit?.id === "brainstorm"
+              ? { ...unit, brainstormDeployedRound: 1 }
+              : unit,
         ),
       );
     setBackups(hand);
@@ -1834,7 +1856,7 @@ export default function Home() {
     setEnemyBoard(enemyDeployed);
     const openingDraw = Math.max(
       hasTarantulasDraw(deployed, enemyBoard) ? 2 : 1,
-      built.some((unit) => unit.id === "autobot-allicon") ? 2 : 1,
+      built.some((unit) => unit.id === "cliffjumper") ? 2 : 1,
     );
     setBattleHand(pile.slice(0, openingDraw));
     setDrawPile(pile.slice(openingDraw));
@@ -1883,6 +1905,8 @@ export default function Home() {
     )
       dmg += 5;
     if (scoutBuff.includes(unit.id)) dmg += 5;
+    if (unit.role === "Trooper" && (unit.airRaidBoostUntil ?? 0) >= round)
+      dmg += 10;
     return dmg;
   }
   function selectAttacker(index: number) {
@@ -1919,6 +1943,10 @@ export default function Home() {
     flash(`${u.name} selected. Choose an enemy position.`);
   }
   function defeatEnemy(index: number, unit: Unit, next: Slot[]) {
+    if (unit.id === "blades" && enemyRoster.some((card) => card.id === "brawn")) {
+      setBattleHand([]);
+      flash("Blades fell while Brawn was on the enemy team; every Battle Card in your hand was scrapped.", "bad");
+    }
     if (
       unit.faction === "Maximal" &&
       next.some((card) => hasAbility(card, "depthcharge"))
@@ -2005,7 +2033,8 @@ export default function Home() {
       attacker.wolfangBoostRound === round &&
       target?.faction === "Predacon"
         ? 10
-        : 0);
+        : 0) +
+      (attacker.id === "misfire" && target?.role === "Tactician" ? 5 : 0);
     setRevealed((v) => [...new Set([...v, index])]);
     let networkResult: Unit | null = null,
       networkDamage = 0,
@@ -2015,6 +2044,36 @@ export default function Home() {
       const result = applyCharacterAttackDamage(target, dmg, 0);
       if (target.id === "hun-grrr" && result.damage > 0)
         result.unit.hunGrrrEligible = false;
+      if (
+        target.id === "beachcomber" &&
+        result.damage > 0 &&
+        !isCharacterAbilityImmune(attacker, target.faction, round)
+      ) {
+        const retaliation = applyDamage(attacker, 10).unit;
+        setBoard((current) =>
+          applyBoardAuras(
+            current.map((unit, position) =>
+              position === interaction.actor
+                ? retaliation.hp > 0
+                  ? retaliation
+                  : null
+                : unit,
+            ),
+          ),
+        );
+        if (retaliation.hp === 0) setScrap((cards) => [...cards, attacker]);
+        flash("Beachcomber's pacifist field dealt 10 damage back to the attacker.", "bad");
+      }
+      if (target.id === "bluestreak" && attacker.faction === "Autobot") {
+        setBoard((current) =>
+          current.map((unit, position) =>
+            position === interaction.actor && unit
+              ? { ...unit, bluestreakMarkedUntil: round + 1 }
+              : unit,
+          ),
+        );
+        revealedAttackerId = attacker.id;
+      }
       const mirageDecoy =
         target.id === "mirage" &&
         target.abilityUses > 0 &&
@@ -2136,14 +2195,30 @@ export default function Home() {
       flash("Choose the first of 3 friendly spaces to conceal from detection.");
       return;
     }
-    if (key === "cutthroat" || key === "dion" || key === "firestar") {
+    if (key === "drag-strip") {
+      if (!battleHand.length) {
+        flash("Drag Strip needs a Battle Card in your hand to duplicate.", "bad");
+        return;
+      }
+      setInteraction({ kind: "drag-strip", actor: index });
+      flash("Choose the Battle Card Drag Strip will duplicate.");
+      return;
+    }
+    if (
+      key === "cutthroat" ||
+      key === "dion" ||
+      key === "firestar" ||
+      key === "chromia"
+    ) {
       setInteraction({ kind: key, actor: index });
       flash(
         key === "cutthroat"
           ? "Choose a character in the friendly row Cutthroat will shield."
           : key === "dion"
             ? "Choose a damaged friendly character to receive Dion's Health."
-            : "Choose a friendly character for Firestar to swap positions with.",
+            : key === "firestar"
+              ? "Choose a friendly character for Firestar to swap positions with."
+              : "Choose the friendly board space Chromia will turn into a healing zone.",
       );
       return;
     }
@@ -2366,6 +2441,56 @@ export default function Home() {
         ),
       );
       flash("Wolfang gains +10 Damage against Predacons this round.", "good");
+    } else if (key === "air-raid") {
+      setBoard((current) =>
+        current.map((card) =>
+          card?.role === "Trooper"
+            ? { ...card, airRaidBoostUntil: round + 1 }
+            : card,
+        ),
+      );
+      flash("Air Raid gave every friendly Trooper +10 Damage for 2 rounds.", "good");
+    } else if (key === "motormaster") {
+      if (!enemyRoster.some((card) => card.id === "optimus")) {
+        flash("Motormaster requires Optimus Prime on the enemy team.", "bad");
+        return;
+      }
+      flash(`Motormaster drew ${drawCards(3)} Battle Cards.`, "good");
+    } else if (key === "nemesis-prime") {
+      if (round !== 1) {
+        flash("Nemesis Prime can only clone a Commander during round 1.", "bad");
+        return;
+      }
+      const commander = board.find(
+        (card) => card?.role === "Commander" && card.id !== "nemesis-prime",
+      );
+      if (!commander) {
+        flash("Nemesis Prime needs your other Commander deployed.", "bad");
+        return;
+      }
+      setBoard((current) =>
+        current.map((card, position) =>
+          position === index && card
+            ? {
+                ...card,
+                copiedCommanderId: commander.id,
+                dmg: card.dmg + 5,
+                nemesisCopied: true,
+                abilityUses: 2,
+              }
+            : card,
+        ),
+      );
+      flash(`Nemesis Prime cloned ${commander.name}'s ability and gained +5 Damage.`, "good");
+    } else if (key === "ramjet") {
+      setBoard((current) =>
+        current.map((card, position) =>
+          position === index && card
+            ? { ...card, ramjetImmuneUntil: round + 2 }
+            : card,
+        ),
+      );
+      flash("Ramjet ignores non-Decepticon character abilities for 3 rounds.", "good");
     } else if (key === "cyclonus") {
       setBoard((current) => healFaction(current, "Decepticon", 5));
       setBackups((current) => healFaction(current, "Decepticon", 5));
@@ -2524,7 +2649,9 @@ export default function Home() {
   function resolveFriendlyCharacterAbility(index: number) {
     if (
       !interaction ||
-      !["cutthroat", "dion", "firestar"].includes(interaction.kind) ||
+      !["cutthroat", "dion", "firestar", "chromia"].includes(
+        interaction.kind,
+      ) ||
       interaction.actor === undefined
     )
       return false;
@@ -2565,7 +2692,7 @@ export default function Home() {
       next[interaction.actor] = result.source;
       next[index] = result.target;
       flash(`Dion transferred ${result.amount} Health to ${target.name}.`, "good");
-    } else {
+    } else if (interaction.kind === "firestar") {
       if (index === interaction.actor) {
         flash("Choose a different friendly character for Firestar to swap with.", "bad");
         return true;
@@ -2575,6 +2702,21 @@ export default function Home() {
         next[interaction.actor],
       ];
       flash(`Firestar swapped positions with ${target.name}.`, "good");
+    } else {
+      if (actor.hp <= 10) {
+        flash("Chromia needs more than 10 Health to activate her healing zone.", "bad");
+        return true;
+      }
+      next[interaction.actor] = {
+        ...actor,
+        hp: actor.hp - 10,
+        chromiaHealSlot: index,
+        chromiaHealUntil: round + 3,
+      };
+      flash(
+        `Chromia powered space ${index + 1}; its occupant heals 10 at the start of the next 3 rounds.`,
+        "good",
+      );
     }
     next = next.map((card) =>
       card?.id === actor.id
@@ -2598,6 +2740,21 @@ export default function Home() {
         !!target &&
         actor.faction === "Predacon" &&
         isPredaconAbilityImmune(target);
+    const abilityImmune =
+      !!target && isCharacterAbilityImmune(target, actor.faction, round);
+    if (abilityImmune) {
+      flash("Ramjet ignored the non-Decepticon character ability.", "bad");
+      setBoard((current) =>
+        current.map((unit, position) =>
+          position === interaction.actor && unit
+            ? { ...unit, abilityUses: Math.max(0, unit.abilityUses - 1) }
+            : unit,
+        ),
+      );
+      setUsedAbilities((current) => [...current, actor.id]);
+      spendAction();
+      return;
+    }
     if (target && !predaconProtected)
       setRevealed((v) => [...new Set([...v, index])]);
     if (key === "shockwave" && target) {
@@ -2679,6 +2836,22 @@ export default function Home() {
     setInteraction(null);
   }
   function playBattleCard(name: string, index: number) {
+    if (interaction?.kind === "drag-strip" && interaction.actor !== undefined) {
+      const actor = board[interaction.actor];
+      if (!actor) return;
+      setBattleHand((current) => [...current, name]);
+      setBoard((current) =>
+        current.map((unit, position) =>
+          position === interaction.actor && unit
+            ? { ...unit, abilityUses: Math.max(0, unit.abilityUses - 1) }
+            : unit,
+        ),
+      );
+      setUsedAbilities((current) => [...current, actor.id]);
+      flash(`Drag Strip duplicated ${name}.`, "good");
+      spendAction();
+      return;
+    }
     if (interaction?.cardIndex === index) {
       setInteraction(null);
       flash(`${name} deselected.`);
@@ -2968,7 +3141,14 @@ export default function Home() {
       flash("Choose a Backup and an empty board space.", "bad");
       return;
     }
-    const nextBoard = applyBoardAuras(result.board);
+    const nextBoard = applyBoardAuras(
+      result.board.map((unit) =>
+        unit?.id === "brainstorm" &&
+        unit.brainstormDeployedRound === undefined
+          ? { ...unit, brainstormDeployedRound: round }
+          : unit,
+      ),
+    );
     setBoard(nextBoard);
     setBackups(result.backups);
     setDragSource(null);
@@ -3029,7 +3209,16 @@ export default function Home() {
           );
           return;
         }
-        setBoard(applyBoardAuras(result.board));
+        setBoard(
+          applyBoardAuras(
+            result.board.map((unit) =>
+              unit?.id === "brainstorm" &&
+              unit.brainstormDeployedRound === undefined
+                ? { ...unit, brainstormDeployedRound: round }
+                : unit,
+            ),
+          ),
+        );
         setBackups(result.backups);
         spendBattle("Reinforce", interaction.cardIndex);
         flash("Reinforce completed the selected exchange.", "good");
@@ -3083,10 +3272,19 @@ export default function Home() {
       );
       return;
     }
+    if (moving?.locked) {
+      setDragSource(null);
+      flash(`${moving.name} is locked in place and cannot be repositioned.`, "bad");
+      return;
+    }
     let nextBoard = applyBoardAuras(result.board);
     if (moving?.id === "ravage")
       nextBoard = nextBoard.map((unit) =>
         unit?.id === "ravage" ? { ...unit, ravageGuard: true } : unit,
+      );
+    if (moving?.id === "blurr")
+      nextBoard = nextBoard.map((unit) =>
+        unit?.id === "blurr" ? { ...unit, blurrLastMovedRound: round } : unit,
       );
     setBoard(nextBoard);
     setBackups(result.backups);
@@ -3216,6 +3414,22 @@ export default function Home() {
     }
     const reduction = armored === target.id ? 10 : 0,
       result = applyCharacterAttackDamage(target, attacker.dmg, reduction);
+    if (
+      target.id === "beachcomber" &&
+      result.damage > 0 &&
+      !isCharacterAbilityImmune(attacker, target.faction, round)
+    ) {
+      setEnemyBoard((current) =>
+        applyBoardAuras(
+          current.map((unit, position) =>
+            position === attackerIndex && unit
+              ? { ...unit, hp: Math.max(0, unit.hp - 10) }
+              : unit,
+          ),
+        ),
+      );
+      flash("Beachcomber's pacifist field dealt 10 damage back to the attacker.", "good");
+    }
     if (target.id === "hun-grrr" && result.damage > 0)
       result.unit.hunGrrrEligible = false;
     if (reduction) setArmored(null);
@@ -3365,6 +3579,14 @@ export default function Home() {
           dmg:
             lastStandDamage(attacker.x, enemyLeft) +
             (beeBoost ? 5 : 0) +
+            (attacker.x.role === "Trooper" &&
+            (attacker.x.airRaidBoostUntil ?? 0) >= round
+              ? 10
+              : 0) +
+            (attacker.x.id === "misfire" &&
+            pb[target]?.role === "Tactician"
+              ? 5
+              : 0) +
             (attacker.x.id === "wolfang" &&
             attacker.x.wolfangBoostRound === round &&
             pb[target]?.faction === "Predacon"
@@ -3476,11 +3698,13 @@ export default function Home() {
         [eb[a], eb[b]] = [eb[b], eb[a]];
       }
     }
-    eb = eb.map((unit) =>
-      unit?.id === "ravage" && movedIds.has(unit.id)
-        ? { ...unit, ravageGuard: true }
-        : unit,
-    );
+    eb = eb.map((unit) => {
+      if (unit?.id === "ravage" && movedIds.has(unit.id))
+        return { ...unit, ravageGuard: true };
+      if (unit?.id === "blurr" && movedIds.has(unit.id))
+        return { ...unit, blurrLastMovedRound: round };
+      return unit;
+    });
     return { board: applyBoardAuras(eb), backups: bk };
   }
   function nextRound() {
@@ -3500,16 +3724,15 @@ export default function Home() {
           : u,
       );
     const poisonDeaths: Unit[] = [];
-    const eb = expireTimedShields(
-      poisoned.map((u) => {
+    const eb = applyBoardAuras(applyRoundPassives(expireTimedShields(
+      repositionBlurr(poisoned.map((u) => {
         if (u && u.hp === 0) {
           poisonDeaths.push(u);
           return null;
         }
         return u;
-      }),
-      newRound,
-    );
+      }), round),
+      newRound), newRound, moved.backups));
     if (poisonDeaths.length) {
       setEnemyScrap((v) => [...v, ...poisonDeaths]);
       setEnemyDefeatPending(true);
@@ -3523,7 +3746,15 @@ export default function Home() {
         ? { ...u, hp: Math.min(u.max, u.hp + 15) }
         : u,
     );
-    setBoard((current) => expireTimedShields(current, newRound));
+    setBoard((current) =>
+      applyBoardAuras(
+        applyRoundPassives(
+          expireTimedShields(repositionBlurr(current, round), newRound),
+          newRound,
+          bk,
+        ),
+      ),
+    );
     setEnemyBoard(eb);
     setEnemyBackups(moved.backups);
     // Repositioning is secret: previously confirmed coordinates are no longer

@@ -80,6 +80,13 @@ test("the six-character update adds its theme and Character Card border", () => 
   assert.match(css, /data-card-border="stasis-chrome"/);
 });
 
+test("the latest character expansion adds its flight theme and border", () => {
+  assert.match(page, /\["aerialbot-skyforge", "Aerialbot Skyforge"\]/);
+  assert.match(css, /html\[data-theme="aerialbot-skyforge"\]/);
+  assert.match(page, /\["seeker-contrail-frame", "Seeker Contrail Frame"\]/);
+  assert.match(css, /data-card-border="seeker-contrail-frame"/);
+});
+
 test("combat history is unlimited while its badge caps at 99+", () => {
   assert.doesNotMatch(page, /\.slice\(0,100\)/);
   assert.match(page, /log\.length > 99 \? "99\+" : log\.length/);
