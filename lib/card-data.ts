@@ -24,6 +24,11 @@ export type Unit = {
   dinobotBonus?: boolean;
   dinobotHitStreak?: number;
   optimalBoost?: boolean;
+  damageImmune?: boolean;
+  damageImmuneUntil?: number;
+  wolfangBoostRound?: number;
+  ultraMammothRushRound?: number;
+  hunGrrrEligible?: boolean;
 };
 export type Slot = Unit | null;
 export type BattleInfo = {
@@ -171,6 +176,51 @@ const rows: Record<
       10,
       "Replace every Battle Card in your hand with a random one. 1 use.",
       1,
+    ],
+    [
+      "autobot-allicon",
+      "Allicon",
+      "Scout",
+      50,
+      10,
+      "If Allicon is in your deck, start the game with 2 Battle Cards instead of 1.",
+      0,
+    ],
+    [
+      "cosmos",
+      "Cosmos",
+      "Tactician",
+      50,
+      15,
+      "At the start of the game, enemy Tacticians are fully visible for 2 rounds.",
+      0,
+    ],
+    [
+      "dion",
+      "Dion",
+      "Tactician",
+      70,
+      10,
+      "Transfer Dion's Health to restore the missing Health of another character. 2 uses.",
+      2,
+    ],
+    [
+      "firestar",
+      "Firestar",
+      "Scout",
+      50,
+      10,
+      "When a friendly character is revealed, Firestar may swap positions with it. 1 use.",
+      1,
+    ],
+    [
+      "mirage",
+      "Mirage",
+      "Trooper",
+      60,
+      25,
+      "While deployed, Mirage reports an enemy attack as a miss even when it hits. 3 uses.",
+      3,
     ],
   ],
   Decepticon: [
@@ -482,6 +532,51 @@ const rows: Record<
       "Whenever a Predacon on your team dies, heal Transmetal Tarantulas by 15.",
       0,
     ],
+    [
+      "cutthroat",
+      "Cutthroat",
+      "Scout",
+      50,
+      10,
+      "Select a friendly row; every character in it gains a shield for the next round. 1 use.",
+      1,
+    ],
+    [
+      "blight",
+      "Blight",
+      "Trooper",
+      80,
+      20,
+      "If Blight is the last character alive on your team, his Damage permanently becomes 40.",
+      0,
+    ],
+    [
+      "hun-grrr",
+      "Hun-Grrr",
+      "Commander",
+      100,
+      15,
+      "If Hun-Grrr reaches round 5 after remaining deployed for the whole game without taking damage, you automatically win.",
+      0,
+    ],
+    [
+      "sinnertwin",
+      "Sinnertwin",
+      "Tactician",
+      50,
+      15,
+      "Lower Hun-Grrr's automatic-win condition from round 5 to round 4. 1 use.",
+      1,
+    ],
+    [
+      "rippersnapper",
+      "Rippersnapper",
+      "Trooper",
+      60,
+      25,
+      "Rippersnapper becomes immune to all damage for 3 rounds. 1 use.",
+      1,
+    ],
   ],
   Maximal: [
     [
@@ -592,6 +687,60 @@ const rows: Record<
       "While your full nine-card team consists of Maximals, Lio Convoy cannot be detected.",
       0,
     ],
+    [
+      "big-convoy",
+      "Big Convoy",
+      "Commander",
+      80,
+      20,
+      "If Ultra Mammoth is deployed, heal every character in your front row by 5 Health. 1 use.",
+      1,
+    ],
+    [
+      "claw-jaw",
+      "Claw Jaw",
+      "Trooper",
+      80,
+      20,
+      "If Depthcharge is deployed, Claw Jaw gains a shield for 3 rounds. 1 use.",
+      1,
+    ],
+    [
+      "polar-claw",
+      "Polar Claw",
+      "Tactician",
+      70,
+      10,
+      "If Polar Claw is your last character alive, permanently reveal every enemy position. 1 use.",
+      1,
+    ],
+    [
+      "razorbeast",
+      "Razorbeast",
+      "Scout",
+      50,
+      10,
+      "Draw 1 Battle Card for every defeated Maximal on your team. 1 use.",
+      1,
+    ],
+    [
+      "ultra-mammoth",
+      "Ultra Mammoth",
+      "Commander",
+      80,
+      20,
+      "Ultra Mammoth may attack 4 times this turn. 1 use.",
+      1,
+    ],
+    [
+      "wolfang",
+      "Wolfang",
+      "Scout",
+      40,
+      5,
+      "Wolfang deals +10 Damage to Predacons for this turn. 2 uses.",
+      2,
+    ],
   ],
 };
 
@@ -612,6 +761,7 @@ const imageNames: Record<string, string> = {
   thunder: "thundercracker",
   maxgrimlock: "maximal-grimlock",
   optimal: "optimal-optimus",
+  "autobot-allicon": "autobot-allicon",
 };
 export const rosters = Object.fromEntries(
   Object.entries(rows).map(([faction, units]) => [

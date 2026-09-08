@@ -15,6 +15,10 @@ import {
   healTransmetalTarantulas,
   hasTarantulasDraw,
   isFullFactionTeam,
+  healFrontRow,
+  hunGrrrWins,
+  lastStandDamage,
+  transferHealth,
 } from "../lib/combat-engine.mjs";
 
 const abilitySignals = {
@@ -79,6 +83,22 @@ const abilitySignals = {
   tarantulas: /extra Battle Card/i,
   "transmetal-tarantulas": /heal Transmetal Tarantulas by 15/i,
   "lio-convoy": /cannot be detected/i,
+  "autobot-allicon": /2 Battle Cards/i,
+  cosmos: /Tacticians are fully visible/i,
+  dion: /Transfer Dion's Health/i,
+  firestar: /swap positions/i,
+  mirage: /reports an enemy attack as a miss/i,
+  cutthroat: /gains a shield/i,
+  blight: /Damage permanently becomes 40/i,
+  "hun-grrr": /round 5/i,
+  sinnertwin: /round 4/i,
+  rippersnapper: /immune to all damage/i,
+  "big-convoy": /front row/i,
+  "claw-jaw": /shield for 3 rounds/i,
+  "polar-claw": /last character alive/i,
+  razorbeast: /defeated Maximal/i,
+  "ultra-mammoth": /4 times/i,
+  wolfang: /\+10 Damage to Predacons/i,
 };
 
 test("every character ability has an explicit regression case", async (t) => {
@@ -217,6 +237,31 @@ test("Cyclonus heals all Decepticons and Tarantulas checks both commanders", () 
   assert.equal(
     hasTarantulasDraw([maximal("tarantulas")], [maximal("razor")]),
     false,
+  );
+});
+
+test("new team abilities resolve their printed health and damage rules", () => {
+  const blight = maximal("blight"),
+    dion = { ...maximal("dion"), hp: 60 },
+    wounded = { ...maximal("firestar"), hp: 20 },
+    transferred = transferHealth(dion, wounded),
+    healed = healFrontRow([
+      { ...maximal("wolfang"), hp: 10 },
+      null,
+      { ...maximal("polar-claw"), hp: 20 },
+      { ...maximal("razorbeast"), hp: 20 },
+    ]);
+  assert.equal(lastStandDamage(blight, 1), 40);
+  assert.equal(lastStandDamage(blight, 2), 20);
+  assert.equal(transferred.amount, 30);
+  assert.equal(transferred.source.hp, 30);
+  assert.equal(transferred.target.hp, 50);
+  assert.equal(healed[0].hp, 15);
+  assert.equal(healed[2].hp, 25);
+  assert.equal(healed[3].hp, 20);
+  assert.equal(
+    hunGrrrWins([{ ...maximal("hun-grrr"), hunGrrrEligible: true }], 5),
+    true,
   );
 });
 

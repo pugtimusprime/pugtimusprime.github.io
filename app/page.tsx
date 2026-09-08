@@ -51,12 +51,16 @@ import {
   isFullFactionTeam,
   hasTarantulasDraw,
   healFaction,
+  healFrontRow,
   healTransmetalTarantulas,
+  hunGrrrWins,
+  lastStandDamage,
   reposition,
   resolveTrap,
   reviveAtHalf,
   shouldLayDepthchargeMine,
   stalemateResult,
+  transferHealth,
   validateDeck,
 } from "@/lib/combat-engine.mjs";
 import {
@@ -100,7 +104,10 @@ type Interaction = {
     | "getaway"
     | "bludgeon"
     | "galvatron"
-    | "rhinox";
+    | "rhinox"
+    | "cutthroat"
+    | "dion"
+    | "firestar";
   actor?: number;
   name?: string;
   cardIndex?: number;
@@ -190,6 +197,7 @@ const themes = [
   ["moonbase-relay", "Moonbase Relay"],
   ["titan-siege-command", "Titan Siege Command"],
   ["vector-sigma-dawn", "Vector Sigma Dawn"],
+  ["terrorcon-crucible", "Terrorcon Crucible"],
 ] as const;
 const cardBorders = [
   ["energon-edge", "Energon Edge"],
@@ -211,6 +219,7 @@ const cardBorders = [
   ["orbital-clamp", "Orbital Clamp"],
   ["raidbreaker-frame", "Raidbreaker Frame"],
   ["spark-forge-frame", "Spark Forge Frame"],
+  ["mammoth-tusk-frame", "Mammoth Tusk Frame"],
 ] as const;
 const activeAbilities = new Set([
   "eject",
@@ -234,6 +243,17 @@ const activeAbilities = new Set([
   "rattrap",
   "rhinox",
   "cyclonus",
+  "cutthroat",
+  "sinnertwin",
+  "rippersnapper",
+  "big-convoy",
+  "claw-jaw",
+  "polar-claw",
+  "razorbeast",
+  "ultra-mammoth",
+  "wolfang",
+  "dion",
+  "firestar",
 ]);
 const targetAbility = new Set([
   "eject",
@@ -1128,7 +1148,9 @@ export default function Home() {
     [scoutBuff, setScoutBuff] = useState<string[]>([]),
     [enemyDefeatPending, setEnemyDefeatPending] = useState(false),
     [quietRounds, setQuietRounds] = useState(0),
-    [roundDamage, setRoundDamage] = useState(false);
+    [roundDamage, setRoundDamage] = useState(false),
+    [hunGrrrWinRound, setHunGrrrWinRound] = useState(5),
+    [cosmosRevealUntil, setCosmosRevealUntil] = useState(0);
   const [feedback, setFeedback] = useState<Feedback>({
       text: "Build your team and take command.",
       tone: "info",
@@ -1269,7 +1291,15 @@ export default function Home() {
         setUsedAttacks([]);
         setUsedAbilities([]);
         setRoundDamage(false);
-        setRevealed([]);
+        setRevealed(
+          built.some((unit) => unit.id === "cosmos") && data.round <= 2
+            ? enemyBoardRef.current
+                .map((card, position) =>
+                  card?.role === "Tactician" ? position : -1,
+                )
+                .filter((position) => position >= 0)
+            : [],
+        );
         setHitSpaces([]);
         setRepositionLocked(false);
         if (data.round > 1)
@@ -1583,18 +1613,32 @@ export default function Home() {
     return cards.length;
   }
   function expireTimedShields(slots: Slot[], currentRound: number) {
-    return slots.map((unit) =>
-      unit?.timedShield &&
-      unit.shieldUntil !== undefined &&
-      unit.shieldUntil < currentRound
-        ? {
-            ...unit,
-            shield: Math.max(0, (unit.shield ?? 0) - 1),
-            timedShield: false,
-            shieldUntil: undefined,
-          }
-        : unit,
-    );
+    return slots.map((unit) => {
+      if (!unit) return unit;
+      let next = unit;
+      if (
+        next.timedShield &&
+        next.shieldUntil !== undefined &&
+        next.shieldUntil < currentRound
+      )
+        next = {
+          ...next,
+          shield: Math.max(0, (next.shield ?? 0) - 1),
+          timedShield: false,
+          shieldUntil: undefined,
+        };
+      if (
+        next.damageImmune &&
+        next.damageImmuneUntil !== undefined &&
+        next.damageImmuneUntil < currentRound
+      )
+        next = {
+          ...next,
+          damageImmune: false,
+          damageImmuneUntil: undefined,
+        };
+      return next;
+    });
   }
   function detectionProtected(
     unit: Unit,
@@ -1730,6 +1774,8 @@ export default function Home() {
     setEnemyAiOccupied([]);
     setEnemyAiEmpty([]);
     setEnemyBackupsRevealed(false);
+    setHunGrrrWinRound(5);
+    setCosmosRevealUntil(0);
     flash(
       "Choose any six of your nine characters and place them on your grid.",
     );
@@ -1772,18 +1818,39 @@ export default function Home() {
   function startCombat() {
     if (hand.length !== 3 || board.filter(Boolean).length !== 6) return;
     const pile = makeBattleDeck(),
-      deployed = applyBoardAuras(board);
+      deployed = applyBoardAuras(
+        board.map((unit) =>
+          unit?.id === "hun-grrr" ? { ...unit, hunGrrrEligible: true } : unit,
+        ),
+      );
     setBackups(hand);
     setHand([]);
     setBoard(deployed);
-    setEnemyBoard((v) => applyBoardAuras(v));
-    const openingDraw = hasTarantulasDraw(deployed, enemyBoard) ? 2 : 1;
+    const enemyDeployed = applyBoardAuras(
+      enemyBoard.map((unit) =>
+        unit?.id === "hun-grrr" ? { ...unit, hunGrrrEligible: true } : unit,
+      ),
+    );
+    setEnemyBoard(enemyDeployed);
+    const openingDraw = Math.max(
+      hasTarantulasDraw(deployed, enemyBoard) ? 2 : 1,
+      built.some((unit) => unit.id === "autobot-allicon") ? 2 : 1,
+    );
     setBattleHand(pile.slice(0, openingDraw));
     setDrawPile(pile.slice(openingDraw));
     setActions(3);
     setBattlePlayed(false);
     setUsedAttacks([]);
     setUsedAbilities([]);
+    const cosmosActive = built.some((unit) => unit.id === "cosmos");
+    setCosmosRevealUntil(cosmosActive ? 2 : 0);
+    setRevealed(
+      cosmosActive
+        ? enemyDeployed
+            .map((unit, index) => (unit?.role === "Tactician" ? index : -1))
+            .filter((index) => index >= 0)
+        : [],
+    );
     if (multiplayerSocket) {
       multiplayerSocket.emit("submit-deployment", {
         board: deployed.map((unit) => unit?.id ?? null),
@@ -1803,7 +1870,7 @@ export default function Home() {
     );
   }
   function effectiveDamage(unit: Unit) {
-    let dmg = unit.dmg;
+    let dmg = lastStandDamage(unit, playerLeft);
     const bee = board.some((x) => x?.id === "bee"),
       autobotCommander = board.some(
         (x) => x?.faction === "Autobot" && x.role === "Commander",
@@ -1925,13 +1992,20 @@ export default function Home() {
       spendAction();
       return;
     }
-    const dmg = darkDamage ?? effectiveDamage(attacker),
+    const baseDamage = darkDamage ?? effectiveDamage(attacker),
       next = enemyBoard.map((unit, position) =>
         unit?.id === "dinobot" && position !== index
           ? { ...unit, dinobotHitStreak: 0 }
           : unit,
       ),
       target = next[index];
+    const dmg =
+      baseDamage +
+      (attacker.id === "wolfang" &&
+      attacker.wolfangBoostRound === round &&
+      target?.faction === "Predacon"
+        ? 10
+        : 0);
     setRevealed((v) => [...new Set([...v, index])]);
     let networkResult: Unit | null = null,
       networkDamage = 0,
@@ -1939,6 +2013,15 @@ export default function Home() {
       revealedAttackerId: string | undefined;
     if (target) {
       const result = applyCharacterAttackDamage(target, dmg, 0);
+      if (target.id === "hun-grrr" && result.damage > 0)
+        result.unit.hunGrrrEligible = false;
+      const mirageDecoy =
+        target.id === "mirage" &&
+        target.abilityUses > 0 &&
+        result.damage > 0 &&
+        result.unit.hp > 0;
+      if (mirageDecoy)
+        result.unit.abilityUses = Math.max(0, target.abilityUses - 1);
       next[index] = result.unit;
       networkResult = result.unit;
       networkDamage = result.damage;
@@ -2051,6 +2134,17 @@ export default function Home() {
     if (key === "bludgeon") {
       setInteraction({ kind: "bludgeon", actor: index, picks: [] });
       flash("Choose the first of 3 friendly spaces to conceal from detection.");
+      return;
+    }
+    if (key === "cutthroat" || key === "dion" || key === "firestar") {
+      setInteraction({ kind: key, actor: index });
+      flash(
+        key === "cutthroat"
+          ? "Choose a character in the friendly row Cutthroat will shield."
+          : key === "dion"
+            ? "Choose a damaged friendly character to receive Dion's Health."
+            : "Choose a friendly character for Firestar to swap positions with.",
+      );
       return;
     }
     if (key === "wheeljack") {
@@ -2191,6 +2285,87 @@ export default function Home() {
       setInteraction({ kind: "rhinox", actor: index });
       flash("Choose a defeated Maximal to revive at half Health.");
       return;
+    } else if (key === "sinnertwin") {
+      if (!board.some((card) => card?.id === "hun-grrr")) {
+        flash("Sinnertwin requires Hun-Grrr deployed.", "bad");
+        return;
+      }
+      setHunGrrrWinRound(4);
+      flash("Sinnertwin lowered Hun-Grrr's untouched victory condition to round 4.", "good");
+    } else if (key === "rippersnapper") {
+      setBoard((current) =>
+        current.map((card, position) =>
+          position === index && card
+            ? {
+                ...card,
+                damageImmune: true,
+                damageImmuneUntil: round + 2,
+              }
+            : card,
+        ),
+      );
+      flash("Rippersnapper is immune to all damage through the next 3 rounds.", "good");
+    } else if (key === "big-convoy") {
+      if (!board.some((card) => card?.id === "ultra-mammoth")) {
+        flash("Big Convoy requires Ultra Mammoth deployed.", "bad");
+        return;
+      }
+      setBoard((current) => healFrontRow(current, 5));
+      flash("Big Convoy turned the front row into healing zones and restored 5 Health there.", "good");
+    } else if (key === "claw-jaw") {
+      if (!board.some((card) => card?.id === "depthcharge")) {
+        flash("Claw Jaw requires Depthcharge deployed.", "bad");
+        return;
+      }
+      setBoard((current) =>
+        current.map((card, position) =>
+          position === index && card
+            ? {
+                ...card,
+                shield: (card.shield ?? 0) + 1,
+                timedShield: true,
+                shieldUntil: round + 2,
+              }
+            : card,
+        ),
+      );
+      flash("Claw Jaw gained a shield lasting 3 rounds.", "good");
+    } else if (key === "polar-claw") {
+      if (playerLeft !== 1) {
+        flash("Polar Claw can reveal the enemy formation only as your last survivor.", "bad");
+        return;
+      }
+      setRevealed(enemyBoard.map((card, position) => (card ? position : -1)).filter((position) => position >= 0));
+      setPermanentRevealedIds(
+        enemyBoard.filter((card): card is Unit => Boolean(card)).map((card) => card.id),
+      );
+      flash("Polar Claw permanently exposed every surviving enemy position.", "good");
+    } else if (key === "razorbeast") {
+      const amount = scrap.filter((card) => card.faction === "Maximal").length;
+      if (!amount) {
+        flash("Razorbeast needs at least one defeated Maximal before using this ability.", "bad");
+        return;
+      }
+      flash(`Razorbeast drew ${drawCards(amount)} Battle Card${amount === 1 ? "" : "s"}.`, "good");
+    } else if (key === "ultra-mammoth") {
+      setBoard((current) =>
+        current.map((card, position) =>
+          position === index && card
+            ? { ...card, ultraMammothRushRound: round }
+            : card,
+        ),
+      );
+      setActions((current) => current + 2);
+      flash("Ultra Mammoth may attack up to 4 times this round.", "good");
+    } else if (key === "wolfang") {
+      setBoard((current) =>
+        current.map((card, position) =>
+          position === index && card
+            ? { ...card, wolfangBoostRound: round }
+            : card,
+        ),
+      );
+      flash("Wolfang gains +10 Damage against Predacons this round.", "good");
     } else if (key === "cyclonus") {
       setBoard((current) => healFaction(current, "Decepticon", 5));
       setBackups((current) => healFaction(current, "Decepticon", 5));
@@ -2345,6 +2520,71 @@ export default function Home() {
       "good",
     );
     spendAction();
+  }
+  function resolveFriendlyCharacterAbility(index: number) {
+    if (
+      !interaction ||
+      !["cutthroat", "dion", "firestar"].includes(interaction.kind) ||
+      interaction.actor === undefined
+    )
+      return false;
+    const actor = board[interaction.actor],
+      target = board[index];
+    if (!actor || !target) {
+      flash("Choose a deployed friendly character.", "bad");
+      return true;
+    }
+    let next = [...board];
+    if (interaction.kind === "cutthroat") {
+      const row = Math.floor(index / 3),
+        until = round + 1;
+      next = next.map((card, position) =>
+        card && Math.floor(position / 3) === row
+          ? {
+              ...card,
+              shield: (card.shield ?? 0) + 1,
+              timedShield: true,
+              shieldUntil: until,
+            }
+          : card,
+      );
+      flash(
+        `Cutthroat shielded every character in row ${row + 1} through next round.`,
+        "good",
+      );
+    } else if (interaction.kind === "dion") {
+      if (index === interaction.actor || target.hp >= target.max) {
+        flash("Dion must choose another damaged character.", "bad");
+        return true;
+      }
+      const result = transferHealth(actor, target);
+      if (!result.amount) {
+        flash("Dion does not have enough Health to transfer.", "bad");
+        return true;
+      }
+      next[interaction.actor] = result.source;
+      next[index] = result.target;
+      flash(`Dion transferred ${result.amount} Health to ${target.name}.`, "good");
+    } else {
+      if (index === interaction.actor) {
+        flash("Choose a different friendly character for Firestar to swap with.", "bad");
+        return true;
+      }
+      [next[interaction.actor], next[index]] = [
+        next[index],
+        next[interaction.actor],
+      ];
+      flash(`Firestar swapped positions with ${target.name}.`, "good");
+    }
+    next = next.map((card) =>
+      card?.id === actor.id
+        ? { ...card, abilityUses: Math.max(0, card.abilityUses - 1) }
+        : card,
+    );
+    setBoard(applyBoardAuras(next));
+    setUsedAbilities((current) => [...current, actor.id]);
+    spendAction();
+    return true;
   }
   function resolveAbilityTarget(index: number) {
     if (interaction?.kind !== "ability" || interaction.actor === undefined)
@@ -2608,6 +2848,11 @@ export default function Home() {
         const r = applyDamage(u, 10);
         next[index] = r.unit;
         if (r.unit.hp === 0) defeatEnemy(index, u, next);
+        else if (mirageDecoy)
+          flash(
+            `${attacker.name} attacked position ${index + 1} — Mirage reported it as empty.`,
+            "bad",
+          );
         else
           flash(
             "Deserved Punishment dealt 10 damage to an unknown enemy.",
@@ -2757,6 +3002,7 @@ export default function Home() {
       if (interaction?.kind === "getaway") resolveGetaway(index);
       else if (interaction?.kind === "bludgeon") resolveBludgeon(index);
       else if (interaction?.kind === "galvatron") resolveGalvatron(index);
+      else if (resolveFriendlyCharacterAbility(index)) return;
       else if (
         interaction?.kind === "battle-friendly" ||
         interaction?.kind === "trap"
@@ -2970,6 +3216,8 @@ export default function Home() {
     }
     const reduction = armored === target.id ? 10 : 0,
       result = applyCharacterAttackDamage(target, attacker.dmg, reduction);
+    if (target.id === "hun-grrr" && result.damage > 0)
+      result.unit.hunGrrrEligible = false;
     if (reduction) setArmored(null);
     if (result.blocked) {
       pb[targetIndex] = result.unit;
@@ -3112,7 +3360,17 @@ export default function Home() {
       pb = applyEnemyHit(
         pb,
         target,
-        { ...attacker.x, dmg: attacker.x.dmg + (beeBoost ? 5 : 0) },
+        {
+          ...attacker.x,
+          dmg:
+            lastStandDamage(attacker.x, enemyLeft) +
+            (beeBoost ? 5 : 0) +
+            (attacker.x.id === "wolfang" &&
+            attacker.x.wolfangBoostRound === round &&
+            pb[target]?.faction === "Predacon"
+              ? 10
+              : 0),
+        },
         attacker.i,
       );
       // Record only what the face-down attack can learn: this coordinate was
@@ -3278,6 +3536,20 @@ export default function Home() {
       setPhase("over");
       return;
     }
+    if (hunGrrrWins(board, newRound, hunGrrrWinRound)) {
+      setWinner(
+        `Victory — Hun-Grrr remained deployed and undamaged through round ${newRound}.`,
+      );
+      setPhase("over");
+      return;
+    }
+    if (hunGrrrWins(eb, newRound, 5)) {
+      setWinner(
+        `Defeat — the enemy Hun-Grrr remained deployed and undamaged through round ${newRound}.`,
+      );
+      setPhase("over");
+      return;
+    }
     const quiet = roundDamage ? 0 : quietRounds + 1;
     setQuietRounds(quiet);
     if (quiet >= 4) {
@@ -3298,7 +3570,15 @@ export default function Home() {
     setUsedAttacks([]);
     setUsedAbilities([]);
     setRoundDamage(false);
-    setRevealed([]);
+    setRevealed(
+      newRound <= cosmosRevealUntil
+        ? eb
+            .map((card, position) =>
+              card?.role === "Tactician" ? position : -1,
+            )
+            .filter((position) => position >= 0)
+        : [],
+    );
     drawCards(hasTarantulasDraw(board, eb) ? 2 : 1);
     setPhase("combat");
     const cardsDrawn = hasTarantulasDraw(board, eb) ? 2 : 1;

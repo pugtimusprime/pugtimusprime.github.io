@@ -88,3 +88,28 @@ test("the six new Character Cards are mirrored into the GitHub Pages root", () =
       readAsset(`/cards/characters/${name}.png`),
     );
 });
+
+test("the sixteen-card expansion is mirrored into the GitHub Pages root", () => {
+  for (const name of [
+    "cutthroat",
+    "blight",
+    "hun-grrr",
+    "sinnertwin",
+    "rippersnapper",
+    "big-convoy",
+    "claw-jaw",
+    "polar-claw",
+    "razorbeast",
+    "ultra-mammoth",
+    "wolfang",
+    "autobot-allicon",
+    "cosmos",
+    "dion",
+    "firestar",
+    "mirage",
+  ])
+    assert.deepEqual(
+      readAsset(`/public/cards/characters/${name}.png`),
+      readAsset(`/cards/characters/${name}.png`),
+    );
+});

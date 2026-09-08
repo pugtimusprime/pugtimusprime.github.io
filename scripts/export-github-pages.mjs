@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -39,6 +39,9 @@ await mkdir(resolve(projectRoot, "assets"), { recursive: true });
 for (const asset of currentAssets) {
   await copyFile(resolve(projectRoot, "dist/client", asset), resolve(projectRoot, asset));
 }
+await cp(resolve(projectRoot, "public/cards"), resolve(projectRoot, "cards"), {
+  recursive: true,
+});
 await render("/", "index.html");
 await render("/raid", "raid/index.html");
 console.log("GitHub Pages export contains / and /raid.");

@@ -240,7 +240,7 @@ export default function RaidPage() {
     setAbilitySource(null);
   }
   const abilityTargets = new Set(["eject", "bombshell", "shockwave", "head", "arachnia"]);
-  const raidActiveAbilities = new Set(["eject", "wheeljack", "soundwave", "bombshell", "overlord", "shockwave", "pmega", "wasp", "head", "arachnia", "razor", "getaway", "grapple", "highbrow", "hoist", "bludgeon", "jhiaxus", "rumble", "rattrap", "rhinox", "cyclonus"]);
+  const raidActiveAbilities = new Set(["eject", "wheeljack", "soundwave", "bombshell", "overlord", "shockwave", "pmega", "wasp", "head", "arachnia", "razor", "getaway", "grapple", "highbrow", "hoist", "bludgeon", "jhiaxus", "rumble", "rattrap", "rhinox", "cyclonus", "cutthroat", "sinnertwin", "rippersnapper", "big-convoy", "claw-jaw", "polar-claw", "razorbeast", "ultra-mammoth", "wolfang", "dion", "firestar"]);
   function activateAbility(sourceId: string) {
     if (!active || !me?.team) return;
     const source = me.team.board.find((unit) => unit?.id === sourceId) || me.team.backups.find((unit) => unit?.id === sourceId);

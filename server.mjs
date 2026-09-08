@@ -462,13 +462,31 @@ function raidBossTurn(room) {
     }
     if (room.protectiveFormation) damage = Math.max(0, damage - 5);
     if (room.drawTheirFire?.unitId === chosen.unit.id) damage = Math.max(0, damage - 10);
+    if (
+      chosen.unit.damageImmuneUntil >= room.round ||
+      chosen.unit.raidShieldUntil >= room.round
+    )
+      damage = 0;
     chosen.unit.hp = Math.max(0, chosen.unit.hp - damage);
+    if (chosen.unit.id === "hun-grrr" && damage > 0)
+      chosen.unit.hunGrrrEligible = false;
     if (chosen.unit.hp === 0 && room.holdLine) {
       chosen.unit.hp = 10;
       room.holdLine = false;
       room.log.push(`${chosen.unit.name} held the line at 10 Health.`);
     }
-    recordBossIntel(room, chosen);
+    if (
+      chosen.unit.id === "mirage" &&
+      chosen.unit.abilityUses > 0 &&
+      damage > 0 &&
+      chosen.unit.hp > 0
+    ) {
+      chosen.unit.abilityUses--;
+      const intel = raidIntel(room, chosen.playerId);
+      intel.empty.add(chosen.slot);
+      intel.occupied.delete(chosen.slot);
+      room.log.push("Mirage disguised the successful hit as an empty-space miss.");
+    } else recordBossIntel(room, chosen);
     const attackerName = attacker.id === "quintesson-judge" ? attacker.name : "A hidden Quintesson troop";
     room.log.push(`${attackerName} struck ${chosen.unit.name} for ${damage}.`);
     raidEvent(room, {
@@ -513,6 +531,23 @@ function raidBossTurn(room) {
 }
 function startRaidRound(room) {
   room.round += 1;
+  for (const team of room.teams.values()) {
+    const requiredRound = team.hunGrrrWinRound || 5;
+    const hunGrrr = team.board.find(
+      (unit) =>
+        unit?.id === "hun-grrr" &&
+        unit.hunGrrrEligible &&
+        unit.hp === unit.max,
+    );
+    if (hunGrrr && room.round >= requiredRound) {
+      room.stage = "victory";
+      room.log.push(
+        `Hun-Grrr remained deployed and undamaged through round ${requiredRound}. Raid victory!`,
+      );
+      emitRaid(room);
+      return;
+    }
+  }
   room.stage = "combat";
   room.turnIndex = 0;
   room.repositions.clear();
@@ -523,7 +558,23 @@ function startRaidRound(room) {
   room.battlePlayed = false;
   room.courtFeedback.clear();
   if (room.round === 1) revealRandomBossTroop(room);
-  drawRaidCards(room, 1);
+  const alliconOpening =
+    room.round === 1 &&
+    [...room.teams.values()].some((team) =>
+      [...team.board, ...team.backups].some(
+        (unit) => unit?.id === "autobot-allicon",
+      ),
+    );
+  drawRaidCards(room, alliconOpening ? 2 : 1);
+  if (
+    room.round <= 2 &&
+    [...room.teams.values()].some((team) =>
+      team.board.some((unit) => unit?.id === "cosmos"),
+    )
+  )
+    room.bossBoard.forEach((unit, slot) => {
+      if (unit?.role === "Tactician") room.revealedBossSlots.add(slot);
+    });
   room.teams.forEach((team) => {
     team.used = [];
     team.usedAbilities = [];
@@ -552,7 +603,10 @@ function findPlayerUnit(room, id, ownerId) {
   return null;
 }
 function raidAttackDamage(room, team, attacker, slot) {
-  let damage = attacker.dmg;
+  let damage =
+    attacker.id === "blight" && livingRaidUnits(team).length === 1
+      ? 40
+      : attacker.dmg;
   if (attacker.id === "bee" && team.board.some((unit) => unit?.faction === "Autobot" && unit.role === "Commander")) damage += 5;
   if (team.board.some((unit, index) => unit?.id === "quickstrike" && Math.floor(index / 3) === Math.floor(slot / 3))) damage += 5;
   if (attacker.raidWheeljackBoost) {
@@ -571,6 +625,8 @@ function raidAttackDamage(room, team, attacker, slot) {
     damage += 10;
     attacker.raidRampageBoost = false;
   }
+  if (attacker.raidWolfangBoost && room.judge.faction === "Predacon")
+    damage += 10;
   if (attacker.id === "optimal" && team.board.some((unit) => unit?.id === "primal" || unit?.id === "optimus")) damage = 30;
   if (team.reflectionDamage > 0) {
     damage = team.reflectionDamage;
@@ -1173,6 +1229,8 @@ io.on("connection", (socket) => {
         error: "Choose one of your unplaced characters.",
       });
     team.board[slot] = team.pending.splice(index, 1)[0];
+    if (team.board[slot].id === "hun-grrr")
+      team.board[slot].hunGrrrEligible = true;
     room.log.push(`${room.players.get(socket.id)?.name || "Player"} placed a character in their 3 x 3 board space ${slot + 1}.`);
     reply({ ok: true });
     if (room.teams.size === 2 && [...room.teams.values()].every((entry) => entry.pending.length === 0)) {
@@ -1196,7 +1254,15 @@ io.on("connection", (socket) => {
         ok: false,
         error: "Choose one of your characters and a living boss card.",
       });
-    if ((team.used || []).includes(attacker.id))
+    const previousAttacks = (team.used || []).filter(
+        (id) => id === attacker.id,
+      ).length,
+      attackLimit =
+        attacker.id === "ultra-mammoth" &&
+        attacker.raidRushRound === room.round
+          ? 4
+          : 1;
+    if (previousAttacks >= attackLimit)
       return reply({
         ok: false,
         error: "That character already attacked this turn.",
@@ -1521,6 +1587,111 @@ io.on("connection", (socket) => {
         empty: new Set(),
       });
       effect = "Bludgeon concealed three of your board spaces from the boss.";
+    } else if (sourceId === "cutthroat") {
+      const row = Math.floor(sourceSlot / 3);
+      team.board.forEach((unit, slot) => {
+        if (unit && Math.floor(slot / 3) === row)
+          unit.raidShieldUntil = room.round + 1;
+      });
+      effect =
+        "Cutthroat shielded every character in his row through the next round.";
+    } else if (sourceId === "sinnertwin") {
+      if (!team.board.some((unit) => unit?.id === "hun-grrr"))
+        return reply({
+          ok: false,
+          error: "Sinnertwin requires Hun-Grrr deployed.",
+        });
+      team.hunGrrrWinRound = 4;
+      effect =
+        "Sinnertwin lowered Hun-Grrr's untouched victory condition to round 4.";
+    } else if (sourceId === "rippersnapper") {
+      source.damageImmuneUntil = room.round + 2;
+      effect = "Rippersnapper is immune to all damage for three rounds.";
+    } else if (sourceId === "big-convoy") {
+      if (!team.board.some((unit) => unit?.id === "ultra-mammoth"))
+        return reply({
+          ok: false,
+          error: "Big Convoy requires Ultra Mammoth deployed.",
+        });
+      team.board.forEach((unit, slot) => {
+        if (unit && slot < 3) unit.hp = Math.min(unit.max, unit.hp + 5);
+      });
+      effect = "Big Convoy restored 5 Health to every front-row ally.";
+    } else if (sourceId === "claw-jaw") {
+      if (!team.board.some((unit) => unit?.id === "depthcharge"))
+        return reply({
+          ok: false,
+          error: "Claw Jaw requires Depthcharge deployed.",
+        });
+      source.raidShieldUntil = room.round + 2;
+      effect = "Claw Jaw gained a three-round shield.";
+    } else if (sourceId === "polar-claw") {
+      if (livingRaidUnits(team).length !== 1)
+        return reply({
+          ok: false,
+          error: "Polar Claw must be your last surviving character.",
+        });
+      room.bossBoard.forEach((unit, slot) => {
+        if (unit) room.revealedBossSlots.add(slot);
+      });
+      effect = "Polar Claw permanently revealed every occupied court position.";
+    } else if (sourceId === "razorbeast") {
+      const amount = (team.fallen || []).filter(
+        (unit) => unit.faction === "Maximal",
+      ).length;
+      if (!amount)
+        return reply({
+          ok: false,
+          error: "Razorbeast needs a defeated Maximal.",
+        });
+      drawRaidCards(room, amount);
+      effect =
+        "Razorbeast drew " +
+        amount +
+        " shared Boss Rush Battle Card" +
+        (amount === 1 ? "." : "s.");
+    } else if (sourceId === "ultra-mammoth") {
+      source.raidRushRound = room.round;
+      room.actions += 1;
+      effect = "Ultra Mammoth may attack up to four times this turn.";
+    } else if (sourceId === "wolfang") {
+      source.raidWolfangBoost = true;
+      effect =
+        "Wolfang armed +10 Damage against Predacon enemies for this turn.";
+    } else if (sourceId === "dion") {
+      const target = team.board
+        .filter((unit) => unit && unit.id !== sourceId && unit.hp < unit.max)
+        .sort((a, b) => a.hp / a.max - b.hp / b.max)[0];
+      if (!target || source.hp <= 1)
+        return reply({
+          ok: false,
+          error: "Dion needs a damaged ally and at least 2 Health.",
+        });
+      const amount = Math.min(target.max - target.hp, source.hp - 1);
+      source.hp -= amount;
+      target.hp += amount;
+      effect = "Dion transferred " + amount + " Health to " + target.name + ".";
+    } else if (sourceId === "firestar") {
+      const targetSlot = team.board
+        .map((unit, slot) => ({ unit, slot }))
+        .filter(
+          (entry) =>
+            entry.unit &&
+            entry.unit.id !== sourceId &&
+            entry.unit.hp < entry.unit.max,
+        )
+        .sort((a, b) => a.unit.hp / a.unit.max - b.unit.hp / b.unit.max)[0]
+        ?.slot;
+      if (!Number.isInteger(targetSlot))
+        return reply({
+          ok: false,
+          error: "Firestar needs another deployed ally to protect.",
+        });
+      [team.board[sourceSlot], team.board[targetSlot]] = [
+        team.board[targetSlot],
+        team.board[sourceSlot],
+      ];
+      effect = "Firestar swapped positions with a damaged ally.";
     } else if (sourceId === "cyclonus") {
       team.board
         .filter((unit) => unit?.faction === "Decepticon")

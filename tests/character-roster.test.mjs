@@ -37,6 +37,22 @@ const expected = {
   barrage: ["Barrage", "Decepticon", "Scout", 40, 5],
   cyclonus: ["Cyclonus", "Decepticon", "Trooper", 80, 20],
   "lio-convoy": ["Lio Convoy", "Maximal", "Commander", 100, 15],
+  "autobot-allicon": ["Allicon", "Autobot", "Scout", 50, 10],
+  cosmos: ["Cosmos", "Autobot", "Tactician", 50, 15],
+  dion: ["Dion", "Autobot", "Tactician", 70, 10],
+  firestar: ["Firestar", "Autobot", "Scout", 50, 10],
+  mirage: ["Mirage", "Autobot", "Trooper", 60, 25],
+  cutthroat: ["Cutthroat", "Predacon", "Scout", 50, 10],
+  blight: ["Blight", "Predacon", "Trooper", 80, 20],
+  "hun-grrr": ["Hun-Grrr", "Predacon", "Commander", 100, 15],
+  sinnertwin: ["Sinnertwin", "Predacon", "Tactician", 50, 15],
+  rippersnapper: ["Rippersnapper", "Predacon", "Trooper", 60, 25],
+  "big-convoy": ["Big Convoy", "Maximal", "Commander", 80, 20],
+  "claw-jaw": ["Claw Jaw", "Maximal", "Trooper", 80, 20],
+  "polar-claw": ["Polar Claw", "Maximal", "Tactician", 70, 10],
+  razorbeast: ["Razorbeast", "Maximal", "Scout", 50, 10],
+  "ultra-mammoth": ["Ultra Mammoth", "Maximal", "Commander", 80, 20],
+  wolfang: ["Wolfang", "Maximal", "Scout", 40, 5],
 };
 
 test("all newly supplied characters have the printed names, teams, classes and stats", () => {
@@ -50,16 +66,20 @@ test("all newly supplied characters have the printed names, teams, classes and s
       [name, faction, role, max, dmg],
     );
     const imageName =
-      { maxgrimlock: "maximal-grimlock", optimal: "optimal-optimus" }[id] || id;
+      {
+        maxgrimlock: "maximal-grimlock",
+        optimal: "optimal-optimus",
+        "autobot-allicon": "autobot-allicon",
+      }[id] || id;
     assert.equal(unit.image, `/cards/characters/${imageName}.png`);
   }
 });
 
 test("the expanded faction totals stay correct", () => {
-  assert.equal(rosters.Autobot.length, 15);
+  assert.equal(rosters.Autobot.length, 20);
   assert.equal(rosters.Decepticon.length, 21);
-  assert.equal(rosters.Predacon.length, 13);
-  assert.equal(rosters.Maximal.length, 12);
+  assert.equal(rosters.Predacon.length, 18);
+  assert.equal(rosters.Maximal.length, 18);
 });
 
 test("Barrage permits a legal three-Commander formation", () => {
