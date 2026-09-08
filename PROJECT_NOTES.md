@@ -48,3 +48,5 @@ Character Card border history:
 - Boss Rush hub and loadout update: Orbital Clamp, a graphite-and-copper card frame built from squared docking jaws, blue locking rails and luminous corner bolts.
 - Boss Rush battle-system update: Titan Siege Command, a gunmetal operations theme with crimson alert lanes, amber targeting pips and heavy fortress-panel geometry.
 - Boss Rush battle-system update: Raidbreaker Frame, a reinforced black-steel card border with split crimson armor plates, hazard-gold rivets and a central breach notch.
+- Empty-deck and Boss Rush stat update: Vector Sigma Dawn, a pale-cyan data-temple theme with sunrise-gold circuitry, deep navy chambers and converging archive rays.
+- Empty-deck and Boss Rush stat update: Spark Forge Frame, a dark forged-metal card border with molten spark channels, offset cyan clamps and hammer-cut corners.

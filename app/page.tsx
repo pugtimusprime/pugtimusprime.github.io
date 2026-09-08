@@ -86,6 +86,7 @@ type Phase =
   | "reposition"
   | "over";
 type EnemyChoice = Faction | "Random";
+type StarterChoice = Faction | "None";
 type DragSource = { zone: "hand" | "board" | "backup"; index: number };
 type Interaction = {
   kind:
@@ -188,6 +189,7 @@ const themes = [
   ["cybertron-war-room", "Cybertron War Room"],
   ["moonbase-relay", "Moonbase Relay"],
   ["titan-siege-command", "Titan Siege Command"],
+  ["vector-sigma-dawn", "Vector Sigma Dawn"],
 ] as const;
 const cardBorders = [
   ["energon-edge", "Energon Edge"],
@@ -208,6 +210,7 @@ const cardBorders = [
   ["phase-shift-armor", "Phase-Shift Armor"],
   ["orbital-clamp", "Orbital Clamp"],
   ["raidbreaker-frame", "Raidbreaker Frame"],
+  ["spark-forge-frame", "Spark Forge Frame"],
 ] as const;
 const activeAbilities = new Set([
   "eject",
@@ -1084,7 +1087,7 @@ function minimaxEnemyTarget(
 
 export default function Home() {
   const [phase, setPhase] = useState<Phase>("start"),
-    [faction, setFaction] = useState<Faction>("Autobot"),
+    [faction, setFaction] = useState<StarterChoice>("Autobot"),
     [enemyFaction, setEnemyFaction] = useState<EnemyChoice>("Predacon"),
     [theme, setTheme] = useState("cybertron"),
     [cardBorder, setCardBorder] = useState("energon-edge"),
@@ -3368,11 +3371,12 @@ export default function Home() {
             <select
               value={faction}
               onChange={(e) => {
-                const f = e.target.value as Faction;
+                const f = e.target.value as StarterChoice;
                 setFaction(f);
-                setDeck(starterDeck(f).map((x) => x.id));
+                setDeck(f === "None" ? [] : starterDeck(f).map((x) => x.id));
               }}
             >
+              <option value="None">No deck — build your own</option>
               {Object.keys(rosters)
                 .filter((x) => starterDeck(x as Faction).length === 9)
                 .map((x) => (

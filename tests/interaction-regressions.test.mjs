@@ -116,3 +116,14 @@ test("Boss Rush uses loadout filters, simultaneous placement and hover details",
   assert.match(server, /pending: viewerId === ownerId \? team\.pending : \[\]/);
   assert.doesNotMatch(server, /Wait for your placement turn/);
 });
+
+test("empty deck choices and Boss Rush board damage remain visible", () => {
+  assert.match(page, /<option value="None">No deck — build your own<\/option>/);
+  assert.match(page, /setDeck\(f === "None" \? \[\] : starterDeck\(f\)/);
+  assert.match(raidPage, /useState<Unit\[]>\(\[\]\)/);
+  assert.match(raidPage, /\$\{unit\.dmg\} DMG · YOUR CARD/);
+  assert.match(page, /\["vector-sigma-dawn", "Vector Sigma Dawn"\]/);
+  assert.match(page, /\["spark-forge-frame", "Spark Forge Frame"\]/);
+  assert.match(css, /html\[data-theme="vector-sigma-dawn"\]/);
+  assert.match(css, /data-card-border="spark-forge-frame"/);
+});

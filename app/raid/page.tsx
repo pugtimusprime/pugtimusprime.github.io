@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { io, type Socket } from "socket.io-client";
 import Link from "next/link";
-import { allUnits, starterDeck, type BossRushBattleCard, type Unit } from "@/lib/card-data";
+import { allUnits, type BossRushBattleCard, type Unit } from "@/lib/card-data";
 
 type RaidStage = "lobby" | "deckbuilding" | "briefing" | "deployment" | "combat" | "boss" | "reposition" | "victory" | "defeat";
 type RaidBossUnit = {
@@ -123,7 +123,7 @@ export default function RaidPage() {
   const [code, setCode] = useState("");
   const [state, setState] = useState<RaidState | null>(null);
   const [message, setMessage] = useState("Create a room code and share it with one co-op partner.");
-  const [deck, setDeck] = useState<Unit[]>(() => starterDeck("Autobot"));
+  const [deck, setDeck] = useState<Unit[]>([]);
   const [locked, setLocked] = useState(false);
   const [attacker, setAttacker] = useState<string | null>(null);
   const [abilitySource, setAbilitySource] = useState<string | null>(null);
@@ -547,7 +547,7 @@ export default function RaidPage() {
                                 <>
                                   <CardImage src={unit.image} alt={unit.name} />
                                   <b>{unit.name}</b>
-                                  <small>YOUR CARD</small>
+                                  <small>YOUR CARD · {unit.dmg} DMG</small>
                                 </>
                               ) : (
                                 <span>SPACE {slot + 1}</span>
@@ -706,7 +706,7 @@ export default function RaidPage() {
                             <>
                               <CardImage src={unit.image} alt={unit.name} />
                               <b>{unit.name}</b>
-                              <small>{own ? `${unit.hp}/${unit.max} HP · YOUR CARD` : `${unit.hp}/${unit.max} HP · ALLY CARD`}</small>
+                              <small>{own ? `${unit.hp}/${unit.max} HP · ${unit.dmg} DMG · YOUR CARD` : `${unit.hp}/${unit.max} HP · ${unit.dmg} DMG · ALLY CARD`}</small>
                               {animation?.targetId === unit.id && animation.damage ? <em className="raid-damage-pop">-{animation.damage}</em> : null}
                             </>
                           ) : (
