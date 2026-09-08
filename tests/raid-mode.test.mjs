@@ -202,9 +202,8 @@ test("Boss Rush alternates placement, shares one Battle Card and revives a Baili
     secondSocket.emit("raid-end-turn");
     const reposition = await stateA.waitFor((next) => next.stage === "reposition");
     assert.equal(reposition.bossBoard.filter(Boolean).length, 3);
-    assert.equal(reposition.bossBoard.filter(Boolean).every((unit) => unit.hidden && unit.occupied), true);
-    assert.equal(JSON.stringify(reposition.bossBoard).includes("quintesson-bailiff"), false);
-    assert.equal(JSON.stringify(reposition.bossBoard).includes("quintesson-prosecutor"), false);
+    assert.equal(reposition.bossBoard.filter(Boolean).filter((unit) => unit.hidden === false).length, 1, "one random troop is revealed each round");
+    assert.equal(reposition.bossBoard.filter(Boolean).filter((unit) => unit.hidden).length, 2, "the remaining troops stay concealed");
     assert.match(reposition.log.join("\n"), /defeated Quintesson troop returned at half Health/);
     assert.equal(reposition.repositions[a.id], 1);
     assert.equal(reposition.repositions[b.id], 1);

@@ -168,6 +168,14 @@ function hiddenCourtThreat(board, slot, damage) {
     return hp > 0 ? {...card, hp} : null;
   });
 }
+function revealRandomBossTroop(room) {
+  room.revealedBossSlots.clear();
+  const occupied=room.bossBoard.map((unit,index)=>unit?.hp>0?index:-1).filter((index)=>index>=0);
+  if(!occupied.length) return -1;
+  const slot=occupied[Math.floor(Math.random()*occupied.length)];
+  room.revealedBossSlots.add(slot);
+  return slot;
+}
 function minimaxHiddenCourtMove(board, playerDamage, depth=2) {
   const occupied = board.map((card,index)=>card ? index : -1).filter(index=>index>=0);
   if (occupied.length < 2) return { from:-1, to:-1, score:hiddenCourtValue(board) };
@@ -204,9 +212,9 @@ function moveBossMinimax(room) {
     if(best.from<0 || best.to<0) break;
     [room.bossBoard[best.from],room.bossBoard[best.to]]=[room.bossBoard[best.to],room.bossBoard[best.from]];
   }
-  room.revealedBossSlots.clear();
+  revealRandomBossTroop(room);
   room.courtFeedback.clear();
-  room.log.push("The Quintesson court repositioned two spaces.");
+  room.log.push("The Quintesson court repositioned two spaces and revealed one troop for this round.");
   raidEvent(room,{kind:"reposition",side:"boss"});
 }
 function summonOrRevive(room) {
@@ -290,10 +298,11 @@ function raidBossTurn(room) {
     raidEvent(room,{kind:"hit",attackerId:attacker.id === "quintesson-judge" ? attacker.id : undefined,targetId:chosen.unit.id,damage,side:"boss",defeated:chosen.unit.hp===0});
     if(chosen.unit.hp===0) {
       const team=room.teams.get(chosen.playerId); team.board[chosen.slot]=null; team.fallen=[...(team.fallen||[]),chosen.unit]; reinforceRaidTeam(room,team,chosen.slot);
+      raidEvent(room,{kind:"player-defeat",defeatedName:chosen.unit.name,side:"boss"});
     }
   }
   if([...room.teams.values()].every((team)=>livingRaidUnits(team).length===0)){room.stage="defeat";room.log.push("Both player teams were defeated.");emitRaid(room);return;}
-  if(room.repositionBlockedUntil===room.round) room.log.push("Rattrap prevented the Quintesson court from repositioning.");
+  if(room.repositionBlockedUntil===room.round) { room.log.push("Rattrap prevented the Quintesson court from repositioning."); revealRandomBossTroop(room); }
   else moveBossMinimax(room);
   room.repositions=new Map([...room.players.keys()].map((id)=>[id,1]));
   room.stage="reposition"; room.actions=0; emitRaid(room);
@@ -301,7 +310,7 @@ function raidBossTurn(room) {
 function startRaidRound(room) {
   room.round += 1; room.stage="combat"; room.turnIndex=0; room.repositions.clear(); room.turnOrder.reverse();
   if(!room.turnOrder.length) room.turnOrder=[...room.players.keys()];
-  room.actions=2; room.battlePlayed=false; room.courtFeedback.clear(); drawRaidCards(room,1); room.teams.forEach((team)=>{team.used=[];team.usedAbilities=[];team.faceOff=false;team.traps=[];team.hiddenSpaces=[];}); emitRaid(room);
+  room.actions=2; room.battlePlayed=false; room.courtFeedback.clear(); if(room.round===1) revealRandomBossTroop(room); drawRaidCards(room,1); room.teams.forEach((team)=>{team.used=[];team.usedAbilities=[];team.faceOff=false;team.traps=[];team.hiddenSpaces=[];}); emitRaid(room);
 }
 function completeRaidReposition(room) {
   if([...room.repositions.values()].some((moves)=>moves>0)) return;
@@ -766,7 +775,7 @@ io.on("connection", (socket) => {
       if(sourceId==="head"&&!target){effect="Headstrong searched an empty court space and survived.";}
       else if(sourceId==="shockwave"){const damage=resolveBossDamage(room,target,30);effect="Shockwave dealt "+damage+" damage to "+(target.unit.id===room.judge.id?room.judge.name:"a hidden Quintesson troop")+".";if(target.unit.hp===0)defeatRaidBossUnit(room,target);}
       else if(sourceId==="bombshell"){const damage=resolveBossDamage(room,target,target.unit.dmg);effect="Bombshell forced the hidden target to take "+damage+" damage.";if(target.unit.hp===0)defeatRaidBossUnit(room,target);}
-      else if(sourceId==="head"){if(target.unit.id!==room.judge.id){defeatRaidBossUnit(room,target);if(sourceSlot>=0){team.board[sourceSlot]=null;team.fallen=[...(team.fallen||[]),source];reinforceRaidTeam(room,team,sourceSlot);}effect="Headstrong and a hidden Quintesson troop destroyed one another.";}else effect="Headstrong cannot destroy the Judge; the ability was spent.";}
+      else if(sourceId==="head"){if(target.unit.id!==room.judge.id){defeatRaidBossUnit(room,target);if(sourceSlot>=0){team.board[sourceSlot]=null;team.fallen=[...(team.fallen||[]),source];raidEvent(room,{kind:"player-defeat",defeatedName:source.name,side:"players"});reinforceRaidTeam(room,team,sourceSlot);}effect="Headstrong and a hidden Quintesson troop destroyed one another.";}else effect="Headstrong cannot destroy the Judge; the ability was spent.";}
       else if(sourceId==="eject"){if(target.unit.role==="Scout"){const empty=firstEmptyPlayerSlot(room,socket.id);if(empty>=0){team.board[empty]=source;team.board[sourceSlot]=null;effect="Eject swapped into the guessed hidden Scout position.";}else effect="Eject found a hidden Scout, but your board was full.";}else effect="Eject guessed wrong; the hidden card was not a Scout.";}
       else if(sourceId==="arachnia"){const row=Math.floor(target.slot/3);room.bossBoard.forEach((unit,index)=>{if(unit&&Math.floor(index/3)===row)unit.raidPoison=3;});effect="Black Arachnia poisoned Quintesson court row "+(row+1)+" for three boss turns.";}
     } else if(sourceId==="getaway"){

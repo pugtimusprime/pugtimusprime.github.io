@@ -40,3 +40,5 @@ Character Card border history:
 - Boss Rush court-layout update: Arbiter Crest, a blue-gold crest frame with four-way corner cuts, central seal light and a restrained judicial glow.
 - Hidden-court targeting update: Quintesson Courtline, a crimson courtroom theme with ivory legal lines, gold docket lighting and radial tribunal geometry.
 - Hidden-court targeting update: Courtline Seal, a split oxblood-and-ivory frame with a central verdict seal and clipped judicial corners.
+- Court reveal and death-notice update: Tribunal Reckoning, a steel tribunal theme with amber judgment light, rust-red sentencing accents and geometric docket lines.
+- Court reveal and death-notice update: Sharkticon Docket, a slate docket frame with amber filing marks, shark-bite corner cuts and a red disposal stripe.

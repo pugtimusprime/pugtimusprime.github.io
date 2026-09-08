@@ -375,6 +375,34 @@ html[data-theme="verdict-observatory"] .stage-header,html[data-theme="verdict-ob
 .raid-backup-card.backup-selected{border-color:var(--raid-acid);box-shadow:0 0 0 2px #c5f45a44,0 0 16px #c5f45a55;transform:translateY(-2px)}
 @media(max-width:1100px){.raid-combat-page .raid-arena{grid-template-columns:1fr}.raid-combat-page .raid-boss-panel .raid-judge-space{max-width:700px}}
 
+/* Court spaces use the same square/card presentation as allied board slots while retaining the court's oxblood trim. */
+.raid-combat-page .raid-boss-panel .raid-boss-board{padding:5px;background:#0b120d;border:1px solid #425034;box-shadow:inset 0 0 0 1px #252d21}
+.raid-combat-page .raid-boss-panel .raid-boss-slot{display:grid;grid-template-rows:1fr;align-items:stretch;min-height:64px;padding:3px;background:#0d150f;border:1px solid #7d4e56;box-shadow:inset 0 0 0 1px #252d21;border-radius:3px;transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease}
+.raid-combat-page .raid-boss-panel .raid-boss-slot>img{width:100%;height:100%;min-height:46px;object-fit:cover}
+.raid-court-cardback{display:grid;place-items:center;grid-template-rows:1fr auto;min-height:100%;padding:4px;background:repeating-linear-gradient(135deg,#101811 0 9px,#172218 9px 18px);color:#aeb59a}
+.raid-court-cardback .raid-hidden-card-back{width:42px;height:46px;margin:0;align-self:center}
+.raid-court-cardback b{padding:4px 2px 1px;color:#d7e6bf;font-size:.58rem;letter-spacing:.08em}
+.raid-combat-page .raid-boss-panel .raid-boss-slot .raid-court-result{align-self:end;justify-self:center}
+.raid-combat-page .raid-judge-space{padding:10px}
+.raid-combat-page .raid-judge-card{min-height:142px;grid-template-columns:30% 1fr;gap:10px;padding:8px}
+.raid-combat-page .raid-boss-panel .raid-judge-card img{max-height:132px}
+
+/* A persistent, user-dismissed Judge notice makes player defeats readable without interrupting co-op flow. */
+.raid-death-overlay{position:fixed;inset:0;z-index:100;display:grid;place-items:center;padding:20px;background:#030507c7;backdrop-filter:blur(4px)}
+.raid-death-popup{position:relative;display:grid;grid-template-columns:minmax(130px,34%) 1fr;gap:18px;width:min(92vw,620px);padding:18px;background:linear-gradient(145deg,#332114,#100b08);border:2px solid #f1c45b;box-shadow:0 0 0 1px #6d3d2a,0 20px 70px #000e, inset 0 0 30px #f1c45b18;color:#f7f1d6}
+.raid-death-popup img{width:100%;aspect-ratio:546/768;object-fit:cover;border:1px solid #d59d45;box-shadow:0 0 20px #f1c45b44}
+.raid-death-popup h2{margin:4px 28px 10px 0;font-size:1.35rem;line-height:1.15;text-transform:uppercase}
+.raid-death-popup p:last-child{margin:0;color:#d8c6a7;font-size:.78rem;line-height:1.45}
+.raid-death-kicker{margin:5px 0 0;color:#f1c45b;font-size:.65rem;font-weight:900;letter-spacing:.18em}
+.raid-death-close{position:absolute;top:8px;right:9px;width:30px;height:30px;padding:0;border:1px solid #f1c45b;background:#1d100a;color:#f9dc96;font-size:1.45rem;line-height:1;cursor:pointer}
+.raid-death-close:hover{background:#4a2418;color:#fff4cf}
+@media(max-width:600px){.raid-death-popup{grid-template-columns:100px 1fr;gap:12px;padding:13px}.raid-death-popup h2{font-size:1rem}.raid-death-popup p:last-child{font-size:.68rem}.raid-death-popup img{max-height:140px}}
+
+html[data-theme="tribunal-reckoning"]{--bg:#0b1014;--surface:#182027;--surface2:#27343b;--text:#edf5f1;--sub:#93aaa5;--accent:#f0bd63;--accent2:#ad4b3d;--danger:#ff695f;--line:#53666a;--glow:#f0bd6355;color-scheme:dark}
+html[data-theme="tribunal-reckoning"] body{background-color:var(--bg);background-image:radial-gradient(circle at 50% 12%,#f0bd6320 0 2px,transparent 3px 68px,#ad4b3d1c 70px 73px,transparent 75px),linear-gradient(135deg,transparent 0 47%,#f0bd630c 48% 49%,transparent 50% 100%),repeating-linear-gradient(90deg,transparent 0 58px,#ad4b3d0b 59px 60px,transparent 61px 117px);background-size:280px 280px,100% 100%,236px 236px}
+html[data-theme="tribunal-reckoning"] .stage-header,html[data-theme="tribunal-reckoning"] .rail-panel,html[data-theme="tribunal-reckoning"] .start-card,html[data-theme="tribunal-reckoning"] .builder-head{border-color:#f0bd6380;box-shadow:inset 7px 0 #ad4b3dbb,inset -3px 0 #f0bd6366,0 22px 48px #000d}
+.app-shell[data-card-border="sharkticon-docket"]{--card-frame:#718587;--card-frame-2:#f5cf7b}.app-shell[data-card-border="sharkticon-docket"] .character-border-frame{border:5px solid #425a60!important;border-radius:2px 14px 2px 14px!important;box-shadow:0 0 0 2px #081014,0 0 20px #f0bd6355,inset 0 0 17px #ad4b3d44!important}.app-shell[data-card-border="sharkticon-docket"] .character-border-frame:before{inset:5px;border:1px dashed #f5cf7b;clip-path:polygon(0 0,30% 0,36% 6px,64% 6px,70% 0,100% 0,100% 30%,calc(100% - 6px) 36%,calc(100% - 6px) 64%,100% 70%,100% 100%,70% 100%,64% calc(100% - 6px),36% calc(100% - 6px),30% 100%,0 100%,0 70%,6px 64%,6px 36%,0 30%)}.app-shell[data-card-border="sharkticon-docket"] .character-border-frame:after{inset:0;background:repeating-linear-gradient(90deg,transparent 0 17px,#7185872a 18px 19px),linear-gradient(135deg,transparent 0 47%,#ad4b3d66 48% 52%,transparent 53%);clip-path:inset(3px)}
+
 html[data-theme="quintesson-courtline"]{--bg:#13090d;--surface:#25121a;--surface2:#391d27;--text:#fff0e6;--sub:#c39aa0;--accent:#f0c36a;--accent2:#9e3e4c;--danger:#ff6b67;--line:#75404a;--glow:#f0c36a55;color-scheme:dark}
 html[data-theme="quintesson-courtline"] body{background-color:var(--bg);background-image:linear-gradient(90deg,transparent 0 49.5%,#f0c36a0d 50% 50.5%,transparent 51%),repeating-linear-gradient(0deg,transparent 0 42px,#9e3e4c12 43px 44px,transparent 45px 87px),radial-gradient(ellipse at 50% -8%,#f0c36a20,transparent 58%)}
 html[data-theme="quintesson-courtline"] .stage-header,html[data-theme="quintesson-courtline"] .rail-panel,html[data-theme="quintesson-courtline"] .start-card,html[data-theme="quintesson-courtline"] .builder-head{border-color:#f0c36a80;box-shadow:inset 7px 0 #9e3e4cbb,inset -3px 0 #f0c36a66,0 22px 48px #000d}

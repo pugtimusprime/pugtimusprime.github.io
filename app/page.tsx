@@ -184,6 +184,7 @@ const themes = [
   ["quintesson-archive", "Quintesson Archive"],
   ["verdict-observatory", "Verdict Observatory"],
   ["quintesson-courtline", "Quintesson Courtline"],
+  ["tribunal-reckoning", "Tribunal Reckoning"],
 ] as const;
 const cardBorders = [
   ["energon-edge", "Energon Edge"],
@@ -200,6 +201,7 @@ const cardBorders = [
   ["prosecutor-ledger", "Prosecutor Ledger"],
   ["arbiter-crest", "Arbiter Crest"],
   ["courtline-seal", "Courtline Seal"],
+  ["sharkticon-docket", "Sharkticon Docket"],
 ] as const;
 const activeAbilities = new Set([
   "eject",
