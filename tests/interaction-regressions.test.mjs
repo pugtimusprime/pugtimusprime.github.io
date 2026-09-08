@@ -14,6 +14,10 @@ const server = await readFile(
   new URL("../server.mjs", import.meta.url),
   "utf8",
 );
+const raidPage = await readFile(
+  new URL("../app/raid/page.tsx", import.meta.url),
+  "utf8",
+);
 
 test("card details are hover-driven without the redundant deck preview", () => {
   assert.doesNotMatch(page, /className="deck-ability-preview"/);
@@ -93,4 +97,22 @@ test("the server owns a 30-second reposition deadline", () => {
   assert.match(server, /REPOSITION_DURATION_MS \|\| 30_000/);
   assert.match(server, /reposition-start/);
   assert.match(server, /completeReposition\(room, true\)/);
+});
+
+test("Boss Rush is nested under Multiplayer and the main menu stays focused", () => {
+  assert.match(page, /className="multiplayer-tabs"/);
+  assert.match(page, />\s*Standard Battle\s*</);
+  assert.match(page, />\s*Boss Rush\s*</);
+  assert.match(page, /className="boss-rush-entry"\s+href="\/raid"/);
+  assert.doesNotMatch(page, /className="ghost raid-entry" href="\/raid"/);
+});
+
+test("Boss Rush uses loadout filters, simultaneous placement and hover details", () => {
+  assert.match(raidPage, /className="raid-pool-controls"/);
+  assert.match(raidPage, /filteredUnits\.map/);
+  assert.match(raidPage, /SIMULTANEOUS DEPLOYMENT/);
+  assert.match(raidPage, /RaidCardInspector/);
+  assert.match(raidPage, /onMouseEnter=\{\(\) => setInspected/);
+  assert.match(server, /pending: viewerId === ownerId \? team\.pending : \[\]/);
+  assert.doesNotMatch(server, /Wait for your placement turn/);
 });

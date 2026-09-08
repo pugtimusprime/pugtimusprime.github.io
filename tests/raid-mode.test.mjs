@@ -29,7 +29,9 @@ function tracker(socket) {
     for (const waiter of waiters) waiter();
   });
   return {
-    get latest() { return latest; },
+    get latest() {
+      return latest;
+    },
     waitFor(predicate, timeout = 6000) {
       if (latest && predicate(latest)) return Promise.resolve(latest);
       return new Promise((resolve, reject) => {
@@ -85,15 +87,24 @@ function sharedPlaced(state) {
 }
 
 test("the Quintesson court has the approved Boss Rush board, stats and wording", () => {
-  assert.deepEqual(QUINTESSON_RAID.board, { playerBoards: 2, playerColumns: 3, playerRows: 3, bossColumns: 3, bossRows: 2 });
+  assert.deepEqual(QUINTESSON_RAID.board, {
+    playerBoards: 2,
+    playerColumns: 3,
+    playerRows: 3,
+    bossColumns: 3,
+    bossRows: 2,
+  });
   assert.deepEqual([QUINTESSON_RAID.boss.hp, QUINTESSON_RAID.boss.dmg], [700, 15]);
   assert.match(QUINTESSON_RAID.boss.ability, /two allicons/i);
-  assert.deepEqual(QUINTESSON_RAID.court.map(({ id, role, hp, dmg }) => [id, role, hp, dmg]), [
-    ["quintesson-bailiff", "Trooper", 80, 20],
-    ["quintesson-prosecutor", "Tactician", 70, 10],
-    ["quintesson-executor", "Trooper", 60, 25],
-    ["allicon", "Scout", 40, 5],
-  ]);
+  assert.deepEqual(
+    QUINTESSON_RAID.court.map(({ id, role, hp, dmg }) => [id, role, hp, dmg]),
+    [
+      ["quintesson-bailiff", "Trooper", 80, 20],
+      ["quintesson-prosecutor", "Tactician", 70, 10],
+      ["quintesson-executor", "Trooper", 60, 25],
+      ["allicon", "Scout", 40, 5],
+    ],
+  );
   assert.match(QUINTESSON_RAID.court.at(-1).ability, /Allicon alive/i);
   for (const unit of [QUINTESSON_RAID.boss, ...QUINTESSON_RAID.court]) {
     const publicAsset = readFileSync(new URL(`../public${unit.image}`, import.meta.url));
@@ -129,10 +140,19 @@ test("Raid is a separate route with twin boards and attack-only hit animations",
 
 test("Quick Match pairs the first two waiting players", async () => {
   const port = 3199;
-  const server = spawn(process.execPath, ["server.mjs"], { env: { ...process.env, PORT: String(port), CLIENT_ORIGIN: origin }, stdio: ["ignore", "pipe", "pipe"] });
+  const server = spawn(process.execPath, ["server.mjs"], {
+    env: { ...process.env, PORT: String(port), CLIENT_ORIGIN: origin },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
   await waitForServer(server);
-  const a = io(`http://127.0.0.1:${port}`, { extraHeaders: { Origin: origin }, reconnection: false });
-  const b = io(`http://127.0.0.1:${port}`, { extraHeaders: { Origin: origin }, reconnection: false });
+  const a = io(`http://127.0.0.1:${port}`, {
+    extraHeaders: { Origin: origin },
+    reconnection: false,
+  });
+  const b = io(`http://127.0.0.1:${port}`, {
+    extraHeaders: { Origin: origin },
+    reconnection: false,
+  });
   const states = [roomTracker(a), roomTracker(b)];
   try {
     await Promise.all([new Promise((resolve) => a.once("connect", resolve)), new Promise((resolve) => b.once("connect", resolve))]);
@@ -146,44 +166,71 @@ test("Quick Match pairs the first two waiting players", async () => {
     assert.equal(room.players[0].name, "Alpha");
     assert.equal(room.players[1].name, "Beta");
     const readyPromise = new Promise((resolve) => a.once("match-ready", resolve));
-    a.emit("set-ready", true); b.emit("set-ready", true);
+    a.emit("set-ready", true);
+    b.emit("set-ready", true);
     await readyPromise;
   } finally {
-    a.disconnect(); b.disconnect(); server.kill("SIGTERM");
+    a.disconnect();
+    b.disconnect();
+    server.kill("SIGTERM");
   }
 });
 
-test("Boss Rush alternates placement, shares one Battle Card and revives a Bailiff", async () => {
+test("Boss Rush allows simultaneous private placement, shares one Battle Card and revives a Bailiff", async () => {
   const port = 3200;
-  const server = spawn(process.execPath, ["server.mjs"], { env: { ...process.env, PORT: String(port), CLIENT_ORIGIN: origin }, stdio: ["ignore", "pipe", "pipe"] });
+  const server = spawn(process.execPath, ["server.mjs"], {
+    env: { ...process.env, PORT: String(port), CLIENT_ORIGIN: origin },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
   await waitForServer(server);
-  const a = io(`http://127.0.0.1:${port}`, { extraHeaders: { Origin: origin }, reconnection: false });
-  const b = io(`http://127.0.0.1:${port}`, { extraHeaders: { Origin: origin }, reconnection: false });
-  const stateA = tracker(a), stateB = tracker(b);
+  const a = io(`http://127.0.0.1:${port}`, {
+    extraHeaders: { Origin: origin },
+    reconnection: false,
+  });
+  const b = io(`http://127.0.0.1:${port}`, {
+    extraHeaders: { Origin: origin },
+    reconnection: false,
+  });
+  const stateA = tracker(a),
+    stateB = tracker(b);
   try {
     await Promise.all([new Promise((resolve) => a.once("connect", resolve)), new Promise((resolve) => b.once("connect", resolve))]);
     await emitReply(a, "raid-join", { code: "COURT8", name: "Alpha" });
     await emitReply(b, "raid-join", { code: "COURT8", name: "Beta" });
     await stateA.waitFor((state) => state.players.length === 2);
-    a.emit("raid-ready"); b.emit("raid-ready");
+    a.emit("raid-ready");
+    b.emit("raid-ready");
     await stateA.waitFor((state) => state.stage === "deckbuilding");
     const ids = starterDeck("Autobot").map((unit) => unit.id);
     assert.equal((await emitReply(a, "raid-submit-deck", ids)).ok, true);
     assert.equal((await emitReply(b, "raid-submit-deck", ids)).ok, true);
     let state = await stateA.waitFor((next) => next.stage === "deployment");
-    assert.equal(state.players.every((player) => player.team.board.length === 9), true);
-    while (state.stage === "deployment") {
-      const activeId = state.placementActiveId;
-      const socket = activeId === a.id ? a : b;
-      const activePlayer = state.players.find((player) => player.id === activeId);
-      const pending = activePlayer.team.pending;
-      const slot = activePlayer.team.board.findIndex((unit) => !unit);
-      assert.ok(slot >= 0 && slot < 9, "each player has an independent 3 x 3 placement board");
-      assert.equal((await emitReply(socket, "raid-place", { unitId: pending[0].id, slot: 9 })).ok, false);
-      const placedBefore = sharedPlaced(state);
-      assert.equal((await emitReply(socket, "raid-place", { unitId: pending[0].id, slot })).ok, true);
-      state = await stateA.waitFor((next) => next.stage !== "deployment" || sharedPlaced(next) > placedBefore);
+    const stateForB = await stateB.waitFor((next) => next.stage === "deployment");
+    assert.equal(
+      state.players.every((player) => player.team.board.length === 9),
+      true,
+    );
+    const ownA = state.players.find((player) => player.id === a.id);
+    const allyA = state.players.find((player) => player.id === b.id);
+    const ownB = stateForB.players.find((player) => player.id === b.id);
+    assert.equal(ownA.team.pending.length, 6);
+    assert.equal(ownB.team.pending.length, 6);
+    assert.equal(allyA.team.pending.length, 0, "an ally's pending cards stay private");
+    assert.equal((await emitReply(a, "raid-place", { unitId: ids[0], slot: 9 })).ok, false);
+    const simultaneous = await Promise.all([emitReply(a, "raid-place", { unitId: ids[0], slot: 0 }), emitReply(b, "raid-place", { unitId: ids[0], slot: 0 })]);
+    assert.equal(
+      simultaneous.every((reply) => reply.ok),
+      true,
+      "both players can place without waiting for the other",
+    );
+    for (let index = 1; index < 6; index += 1) {
+      const replies = await Promise.all([emitReply(a, "raid-place", { unitId: ids[index], slot: index }), emitReply(b, "raid-place", { unitId: ids[index], slot: index })]);
+      assert.equal(
+        replies.every((reply) => reply.ok),
+        true,
+      );
     }
+    state = await stateA.waitFor((next) => next.stage === "combat");
     assert.equal(state.stage, "combat");
     assert.equal(state.battleHand.length, 1);
     assert.equal(state.battlePlayed, false);
@@ -196,12 +243,30 @@ test("Boss Rush alternates placement, shares one Battle Card and revives a Baili
     assert.equal((await emitReply(firstSocket, "raid-play-battle", { name: card })).ok, true);
     state = await stateA.waitFor((next) => next.battlePlayed);
     assert.equal(stateA.latest.battlePlayed, true);
-    for (const attackerId of attackIds) assert.equal((await emitReply(firstSocket, "raid-attack", { attackerId, targetSlot: 0 })).ok, true);
+    for (const attackerId of attackIds)
+      assert.equal(
+        (
+          await emitReply(firstSocket, "raid-attack", {
+            attackerId,
+            targetSlot: 0,
+          })
+        ).ok,
+        true,
+      );
     firstSocket.emit("raid-end-turn");
     await stateB.waitFor((next) => next.stage === "combat" && next.activeId === secondSocket.id);
     const secondTeam = stateB.latest.players.find((player) => player.id === secondSocket.id).team;
     const secondAttackIds = ["grimlock", "sun"];
-    for (const attackerId of secondAttackIds) assert.equal((await emitReply(secondSocket, "raid-attack", { attackerId, targetSlot: 0 })).ok, true);
+    for (const attackerId of secondAttackIds)
+      assert.equal(
+        (
+          await emitReply(secondSocket, "raid-attack", {
+            attackerId,
+            targetSlot: 0,
+          })
+        ).ok,
+        true,
+      );
     secondSocket.emit("raid-end-turn");
     const reposition = await stateA.waitFor((next) => next.stage === "reposition");
     assert.equal(reposition.bossBoard.filter(Boolean).length, 3);
@@ -210,11 +275,14 @@ test("Boss Rush alternates placement, shares one Battle Card and revives a Baili
     assert.match(reposition.log.join("\n"), /defeated Quintesson troop returned at half Health/);
     assert.equal(reposition.repositions[a.id], 1);
     assert.equal(reposition.repositions[b.id], 1);
-    a.emit("raid-skip-reposition"); b.emit("raid-skip-reposition");
+    a.emit("raid-skip-reposition");
+    b.emit("raid-skip-reposition");
     const nextRound = await stateA.waitFor((next) => next.stage === "combat" && next.round === 2);
     assert.notEqual(nextRound.activeId, firstActive, "player order reverses after the boss turn");
   } finally {
-    a.disconnect(); b.disconnect(); server.kill("SIGTERM");
+    a.disconnect();
+    b.disconnect();
+    server.kill("SIGTERM");
   }
 });
 
