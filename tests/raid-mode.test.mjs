@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { io } from "socket.io-client";
-import { starterDeck } from "../lib/card-data.ts";
+import { bossRushBattleCards, starterDeck } from "../lib/card-data.ts";
 import { QUINTESSON_RAID } from "../lib/raid-data.ts";
 
 const origin = "https://pugtimusprime.github.io";
@@ -82,10 +82,6 @@ function emitReply(socket, event, payload) {
   return new Promise((resolve) => socket.emit(event, payload, resolve));
 }
 
-function sharedPlaced(state) {
-  return state.players.reduce((sum, player) => sum + (player.team?.board.filter(Boolean).length || 0), 0);
-}
-
 test("the Quintesson court has the approved Boss Rush board, stats and wording", () => {
   assert.deepEqual(QUINTESSON_RAID.board, {
     playerBoards: 2,
@@ -94,12 +90,12 @@ test("the Quintesson court has the approved Boss Rush board, stats and wording",
     bossColumns: 3,
     bossRows: 2,
   });
-  assert.deepEqual([QUINTESSON_RAID.boss.hp, QUINTESSON_RAID.boss.dmg], [700, 15]);
+  assert.deepEqual([QUINTESSON_RAID.boss.hp, QUINTESSON_RAID.boss.dmg], [850, 15]);
   assert.match(QUINTESSON_RAID.boss.ability, /two allicons/i);
   assert.deepEqual(
     QUINTESSON_RAID.court.map(({ id, role, hp, dmg }) => [id, role, hp, dmg]),
     [
-      ["quintesson-bailiff", "Trooper", 80, 20],
+      ["quintesson-bailiff", "Commander", 80, 20],
       ["quintesson-prosecutor", "Tactician", 70, 10],
       ["quintesson-executor", "Trooper", 60, 25],
       ["allicon", "Scout", 40, 5],
@@ -125,7 +121,9 @@ test("Raid is a separate route with twin boards and attack-only hit animations",
   assert.match(raid, /3 × 3/);
   assert.match(raid, /raid-player-boards/);
   assert.match(raid, /Hidden Quintesson troop/);
-  assert.match(raid, /Shared Battle Cards/);
+  assert.match(raid, /SHARED BOSS RUSH DECK/);
+  assert.match(raid, /Unique abilities/);
+  assert.match(raid, /ENEMY BRIEFING/);
   assert.match(css, /\.raid-shared-grid/);
   assert.match(css, /raid-hit-animation/);
   assert.match(raid, /event\.kind === "hit" && \(event\.damage \|\| 0\) > 0/);
@@ -176,7 +174,7 @@ test("Quick Match pairs the first two waiting players", async () => {
   }
 });
 
-test("Boss Rush allows simultaneous private placement, shares one Battle Card and revives a Bailiff", async () => {
+test("Boss Rush briefs both players, allows simultaneous placement, deals exclusive Battle Cards and revives a Bailiff", async () => {
   const port = 3200;
   const server = spawn(process.execPath, ["server.mjs"], {
     env: { ...process.env, PORT: String(port), CLIENT_ORIGIN: origin },
@@ -204,6 +202,12 @@ test("Boss Rush allows simultaneous private placement, shares one Battle Card an
     const ids = starterDeck("Autobot").map((unit) => unit.id);
     assert.equal((await emitReply(a, "raid-submit-deck", ids)).ok, true);
     assert.equal((await emitReply(b, "raid-submit-deck", ids)).ok, true);
+    const briefing = await stateA.waitFor((next) => next.stage === "briefing");
+    assert.equal(briefing.judge.max, 850);
+    assert.equal(briefing.bossRoster.length, 5);
+    assert.equal(briefing.bossRoster.find((unit) => unit.id === "quintesson-bailiff").role, "Commander");
+    a.emit("raid-briefing-ready");
+    b.emit("raid-briefing-ready");
     let state = await stateA.waitFor((next) => next.stage === "deployment");
     const stateForB = await stateB.waitFor((next) => next.stage === "deployment");
     assert.equal(
@@ -234,15 +238,14 @@ test("Boss Rush allows simultaneous private placement, shares one Battle Card an
     assert.equal(state.stage, "combat");
     assert.equal(state.battleHand.length, 1);
     assert.equal(state.battlePlayed, false);
+    assert.equal(state.actions, 3);
+    assert.equal(state.battleHand.every((name) => bossRushBattleCards.some((card) => card.name === name)), true);
+    assert.equal(state.battleCards.length, 26);
     const firstActive = state.activeId;
     const firstSocket = firstActive === a.id ? a : b;
     const secondSocket = firstSocket === a ? b : a;
-    const firstTeam = state.players.find((player) => player.id === firstActive).team;
     const attackIds = ["grimlock", "sun"];
-    const card = state.battleHand[0];
-    assert.equal((await emitReply(firstSocket, "raid-play-battle", { name: card })).ok, true);
-    state = await stateA.waitFor((next) => next.battlePlayed);
-    assert.equal(stateA.latest.battlePlayed, true);
+    assert.equal((await emitReply(firstSocket, "raid-play-battle", { name: "Roll Out" })).ok, false, "normal Battle Cards are rejected in Boss Rush");
     for (const attackerId of attackIds)
       assert.equal(
         (
@@ -255,7 +258,6 @@ test("Boss Rush allows simultaneous private placement, shares one Battle Card an
       );
     firstSocket.emit("raid-end-turn");
     await stateB.waitFor((next) => next.stage === "combat" && next.activeId === secondSocket.id);
-    const secondTeam = stateB.latest.players.find((player) => player.id === secondSocket.id).team;
     const secondAttackIds = ["grimlock", "sun"];
     for (const attackerId of secondAttackIds)
       assert.equal(

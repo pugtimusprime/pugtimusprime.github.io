@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import express from "express";
 import { Server } from "socket.io";
-import { allUnits, makeBattleDeck } from "./lib/card-data.ts";
+import { allUnits, bossRushBattleCards, makeBossRushBattleDeck } from "./lib/card-data.ts";
 
 const app = express();
 const httpServer = createServer(app);
@@ -40,8 +40,8 @@ const raidTemplates = {
     id: "quintesson-judge",
     name: "Quintesson Judge",
     role: "Leader",
-    max: 700,
-    hp: 700,
+    max: 850,
+    hp: 850,
     dmg: 15,
     image: "/cards/characters/quintesson-judge.png",
     ability: "When at the start of each boss turn summon one defeated quintesson troop back to half health, if none are defeated place down one allicon and limited to two allicons on the board at a time.",
@@ -49,7 +49,7 @@ const raidTemplates = {
   bailiff: {
     id: "quintesson-bailiff",
     name: "Quintesson Bailiff",
-    role: "Trooper",
+    role: "Commander",
     max: 80,
     hp: 80,
     dmg: 20,
@@ -112,16 +112,22 @@ function createRaidRoom(code) {
     placementIndex: 0,
     turnOrder: [],
     turnIndex: 0,
-    actions: 2,
+    actions: 3,
     judge: { ...raidTemplates.judge },
     bossBoard: [{ ...raidTemplates.bailiff }, { ...raidTemplates.prosecutor }, { ...raidTemplates.executor }, null, null, null],
     fallen: [],
     enemyDefeatPending: false,
     alliconSerial: 0,
     log: ["The Quintesson Tribunal awaits judgement."],
-    battleDeck: makeBattleDeck(),
+    battleDeck: makeBossRushBattleDeck(),
     battleHand: [],
     battlePlayed: false,
+    briefingReady: new Set(),
+    extraActions: new Map(),
+    extraRepositions: 0,
+    protectiveFormation: false,
+    holdLine: false,
+    bossDamageBonus: 0,
     repositions: new Map(),
     courtFeedback: new Map(),
     eventSeq: 0,
@@ -186,7 +192,10 @@ function raidPublic(room, viewer) {
     bossBoard: publicBossBoard(room),
     courtFeedback: Object.fromEntries(room.courtFeedback),
     battleHand: room.battleHand,
+    battleCards: bossRushBattleCards,
     battlePlayed: room.battlePlayed,
+    briefingReady: room.briefingReady.has(viewer),
+    bossRoster: [raidTemplates.judge, raidTemplates.bailiff, raidTemplates.prosecutor, raidTemplates.executor, raidTemplates.allicon],
     log: room.log.slice(-30),
     eventSeq: room.eventSeq,
   };
@@ -209,7 +218,7 @@ function firstEmptyPlayerSlot(room, playerId) {
 }
 function drawRaidCards(room, amount = 1) {
   for (let i = 0; i < amount; i++) {
-    if (!room.battleDeck.length) room.battleDeck = makeBattleDeck();
+    if (!room.battleDeck.length) room.battleDeck = makeBossRushBattleDeck();
     const card = room.battleDeck.shift();
     if (card) room.battleHand.push(card);
   }
@@ -409,16 +418,18 @@ function raidBossTurn(room) {
     if (poisoned.hp === 0) defeatRaidBossUnit(room, { unit: poisoned, slot });
   }
   const candidates = raidTargetCandidates(room, true);
-  const prosecutor = bossTroops(room).find((unit) => unit.id === "quintesson-prosecutor" && unit.hp > 0);
+  const prosecutor = bossTroops(room).find((unit) => unit.id === "quintesson-prosecutor" && unit.hp > 0 && (unit.raidAbilityDisabledUntil || 0) < room.round);
   const marked = prosecutor ? minimaxRaidTarget(candidates, prosecutor, 2) : null;
   room.markedTarget = marked ? { playerId: marked.playerId, slot: marked.slot } : null;
   if (marked) room.log.push("The Prosecutor marked a concealed player position for judgement.");
   for (const attacker of bossUnits(room).filter((unit) => unit.hp > 0)) {
+    if (attacker.raidSuppressedUntil >= room.round) continue;
     if (attacker.role === "Tactician" && room.bossTacticianDisabledUntil >= room.round) continue;
     const live = raidTargetCandidates(room, true);
     if (!live.length) break;
     const markedLive = marked && live.find((entry) => entry.playerId === marked.playerId && entry.slot === marked.slot);
-    const chosen = attacker.id === "quintesson-prosecutor" && markedLive ? markedLive : minimaxRaidTarget(live, attacker, 2);
+    const forced = room.drawTheirFire && live.find((entry) => entry.playerId === room.drawTheirFire.playerId && entry.unit?.id === room.drawTheirFire.unitId);
+    const chosen = forced || (attacker.id === "quintesson-prosecutor" && markedLive ? markedLive : minimaxRaidTarget(live, attacker, 2));
     if (!chosen) continue;
     if (!chosen.unit) {
       recordBossIntel(room, chosen);
@@ -434,18 +445,29 @@ function raidBossTurn(room) {
       raidEvent(room, { kind: "trap", side: "boss", targetSlot: chosen.slot });
       continue;
     }
-    let damage = attacker.dmg;
+    let damage = attacker.dmg + room.bossDamageBonus;
     if (room.markedTarget && room.markedTarget.playerId === chosen.playerId && room.markedTarget.slot === chosen.slot) {
       damage += 10;
       room.markedTarget = null;
     }
-    if (attacker.id === "quintesson-executor" && chosen.unit.hp <= chosen.unit.max / 2) damage += 10;
-    if (attacker.id.startsWith("allicon")) damage += Math.min(10, bossTroops(room).filter((unit) => unit.id.startsWith("allicon") && unit.hp > 0 && unit !== attacker).length * 5);
+    if (attacker.id === "quintesson-executor" && (attacker.raidAbilityDisabledUntil || 0) < room.round && chosen.unit.hp <= chosen.unit.max / 2) damage += 10;
+    if (attacker.id.startsWith("allicon") && (attacker.raidAbilityDisabledUntil || 0) < room.round) damage += Math.min(10, bossTroops(room).filter((unit) => unit.id.startsWith("allicon") && unit.hp > 0 && unit !== attacker).length * 5);
     if (targetTeam?.armorTargets?.includes(chosen.unit.id)) {
       damage = Math.max(0, damage - 10);
       targetTeam.armorTargets = targetTeam.armorTargets.filter((id) => id !== chosen.unit.id);
     }
+    if (chosen.unit.raidCover) {
+      damage = Math.max(0, damage - chosen.unit.raidCover);
+      chosen.unit.raidCover = 0;
+    }
+    if (room.protectiveFormation) damage = Math.max(0, damage - 5);
+    if (room.drawTheirFire?.unitId === chosen.unit.id) damage = Math.max(0, damage - 10);
     chosen.unit.hp = Math.max(0, chosen.unit.hp - damage);
+    if (chosen.unit.hp === 0 && room.holdLine) {
+      chosen.unit.hp = 10;
+      room.holdLine = false;
+      room.log.push(`${chosen.unit.name} held the line at 10 Health.`);
+    }
     recordBossIntel(room, chosen);
     const attackerName = attacker.id === "quintesson-judge" ? attacker.name : "A hidden Quintesson troop";
     room.log.push(`${attackerName} struck ${chosen.unit.name} for ${damage}.`);
@@ -469,6 +491,10 @@ function raidBossTurn(room) {
       });
     }
   }
+  room.protectiveFormation = false;
+  room.drawTheirFire = null;
+  room.bossDamageBonus = 0;
+  room.breakDefences = false;
   if ([...room.teams.values()].every((team) => livingRaidUnits(team).length === 0)) {
     room.stage = "defeat";
     room.log.push("Both player teams were defeated.");
@@ -479,7 +505,8 @@ function raidBossTurn(room) {
     room.log.push("Rattrap prevented the Quintesson court from repositioning.");
     revealRandomBossTroop(room);
   } else moveBossMinimax(room);
-  room.repositions = new Map([...room.players.keys()].map((id) => [id, 1]));
+  room.repositions = new Map([...room.players.keys()].map((id) => [id, 1 + room.extraRepositions]));
+  room.extraRepositions = 0;
   room.stage = "reposition";
   room.actions = 0;
   emitRaid(room);
@@ -491,7 +518,8 @@ function startRaidRound(room) {
   room.repositions.clear();
   room.turnOrder.reverse();
   if (!room.turnOrder.length) room.turnOrder = [...room.players.keys()];
-  room.actions = 2;
+  room.actions = 3 + (room.extraActions.get(room.turnOrder[0]) || 0);
+  room.extraActions.delete(room.turnOrder[0]);
   room.battlePlayed = false;
   room.courtFeedback.clear();
   if (room.round === 1) revealRandomBossTroop(room);
@@ -551,9 +579,194 @@ function raidAttackDamage(room, team, attacker, slot) {
   return damage;
 }
 function resolveBossDamage(room, target, damage) {
-  const adjusted = target.unit.id === room.judge.id && bossTroops(room).some((unit) => unit.id === "quintesson-bailiff" && unit.hp > 0) ? Math.ceil(damage / 2) : damage;
+  const bailiffProtects = !room.breakDefences && target.unit.id === room.judge.id && bossTroops(room).some((unit) => unit.id === "quintesson-bailiff" && unit.hp > 0 && (unit.raidAbilityDisabledUntil || 0) < room.round);
+  const adjusted = bailiffProtects ? Math.ceil(damage / 2) : damage;
   target.unit.hp = Math.max(0, target.unit.hp - adjusted);
   return adjusted;
+}
+function bossTargetKey(room, target) {
+  return target.unit.id === room.judge.id ? room.judge.id : `court-${target.slot}`;
+}
+function applyRaidBattleAttackBonuses(room, playerId, attacker, target, damage) {
+  const key = bossTargetKey(room, target);
+  if (room.coordinatedStrike) {
+    if (!room.coordinatedStrike.key) room.coordinatedStrike.key = key;
+    if (room.coordinatedStrike.key === key && !room.coordinatedStrike.players.includes(playerId)) {
+      damage += 5;
+      room.coordinatedStrike.players.push(playerId);
+      if (room.coordinatedStrike.players.length >= 2) room.coordinatedStrike = null;
+    }
+  }
+  if (room.concentratedFire?.key === key && room.concentratedFire.remaining > 0) {
+    damage += 5;
+    room.concentratedFire.remaining -= 1;
+    if (room.concentratedFire.remaining <= 0) room.concentratedFire = null;
+  }
+  if (room.exploitWeakness === key) {
+    damage += 10;
+    room.exploitWeakness = null;
+  }
+  if (room.perfectOpening && target.unit.id === room.judge.id) {
+    damage = Math.min(40, damage * 2);
+    room.perfectOpening = false;
+  }
+  if (attacker.raidLastStandBoost) {
+    damage += 15;
+    attacker.raidLastStandBoost = false;
+  }
+  if (attacker.raidOvercharge) {
+    damage += 20;
+    attacker.raidOvercharge = false;
+    attacker.raidOverchargeBacklash = true;
+  }
+  return damage;
+}
+
+function weakestRaidUnit(room, playerId) {
+  return raidTargetCandidates(room).filter((entry) => !playerId || entry.playerId === playerId).sort((a, b) => a.unit.hp - b.unit.hp)[0] || null;
+}
+
+function playBossRushCard(room, playerId, name, targetId, targetSlot) {
+  const team = room.teams.get(playerId);
+  const ownTarget = targetId ? findPlayerUnit(room, targetId, playerId) : null;
+  const friendly = ownTarget || weakestRaidUnit(room, playerId);
+  const bossTarget = targetId ? findBossTarget(room, targetId, targetSlot) : Number.isInteger(targetSlot) ? findBossTarget(room, undefined, targetSlot) : findBossTarget(room, room.judge.id);
+  const key = bossTarget ? bossTargetKey(room, bossTarget) : room.judge.id;
+  let effect = `${name} resolved.`;
+  if (name === "Coordinated Strike") {
+    room.coordinatedStrike = { key, players: [] };
+    effect = "Coordinated Strike armed a +5 attack for each player against the same enemy.";
+  } else if (name === "Emergency Repairs") {
+    if (!friendly) return { ok: false, error: "No friendly character can be repaired." };
+    friendly.unit.hp = Math.min(friendly.unit.max, friendly.unit.hp + 15);
+    effect = `${friendly.unit.name} repaired 15 Health.`;
+  } else if (name === "Cover Your Ally") {
+    if (!friendly) return { ok: false, error: "No friendly character can be covered." };
+    friendly.unit.raidCover = 10;
+    effect = `${friendly.unit.name} will take 10 less damage from the next hit.`;
+  } else if (name === "Combat Analysis") {
+    const hidden = room.bossBoard.map((unit, index) => unit && !room.revealedBossSlots.has(index) ? index : -1).filter((slot) => slot >= 0);
+    if (hidden.length) room.revealedBossSlots.add(hidden[Math.floor(Math.random() * hidden.length)]);
+    effect = "Combat Analysis revealed one non-boss enemy.";
+  } else if (name === "Repositioning Orders") {
+    room.extraRepositions += 1;
+    effect = "Both players gained one additional reposition move.";
+  } else if (name === "Concentrated Fire") {
+    room.concentratedFire = { key, remaining: 3 };
+    effect = "Concentrated Fire armed +5 damage for the next three attacks against the target.";
+  } else if (name === "Tactical Withdrawal") {
+    const deployed = raidTargetCandidates(room).filter((entry) => entry.playerId === playerId).sort((a, b) => a.unit.hp - b.unit.hp)[0];
+    const backup = team?.backups.shift();
+    if (!deployed || !backup) return { ok: false, error: "You need a deployed character and a Backup." };
+    team.board[deployed.slot] = backup;
+    team.backups.push(deployed.unit);
+    effect = `${backup.name} replaced ${deployed.unit.name} without spending a move.`;
+  } else if (name === "Shared Energon") {
+    for (const [id] of room.teams) {
+      const target = weakestRaidUnit(room, id);
+      if (target) target.unit.hp = Math.min(target.unit.max, target.unit.hp + 10);
+    }
+    effect = "One character belonging to each player recovered 10 Health.";
+  } else if (name === "Protective Formation") {
+    room.protectiveFormation = true;
+    effect = "All deployed characters will take 5 less damage during the next boss turn.";
+  } else if (name === "Suppressing Fire") {
+    const target = bossTarget?.unit && bossTarget.unit.id !== room.judge.id ? bossTarget.unit : bossTroops(room).find((unit) => unit.hp > 0);
+    if (!target) return { ok: false, error: "No non-boss enemy can be suppressed." };
+    target.raidSuppressedUntil = room.round;
+    effect = "One non-boss enemy was suppressed for the next boss turn.";
+  } else if (name === "Exploit Weakness") {
+    room.exploitWeakness = key;
+    effect = "The next attack against the target gains +10 damage.";
+  } else if (name === "System Disruption") {
+    const target = bossTarget?.unit && bossTarget.unit.id !== room.judge.id ? bossTarget.unit : bossTroops(room).find((unit) => unit.hp > 0);
+    if (!target) return { ok: false, error: "No non-boss enemy can be disrupted." };
+    target.raidAbilityDisabledUntil = room.round;
+    effect = `${target.name}'s ability was disabled through the next boss turn.`;
+  } else if (name === "Hold the Line") {
+    room.holdLine = true;
+    effect = "The first allied character defeated during the next boss turn will remain at 10 Health.";
+  } else if (name === "All-Out Assault") {
+    room.actions += 1;
+    for (const id of room.turnOrder) if (id !== playerId) room.extraActions.set(id, (room.extraActions.get(id) || 0) + 1);
+    effect = "Both players gained one additional attack this round.";
+  } else if (name === "Break Their Defences") {
+    room.breakDefences = true;
+    effect = "Enemy damage reduction is disabled until the end of the round.";
+  } else if (name === "Perfect Opening") {
+    room.perfectOpening = true;
+    effect = "The next attack against the boss deals double damage, up to 40.";
+  } else if (name === "Emergency Reinforcements") {
+    const slot = firstEmptyPlayerSlot(room, playerId);
+    const backup = team?.backups.shift();
+    if (slot < 0 || !backup) return { ok: false, error: "You need an empty board space and a Backup." };
+    team.board[slot] = backup;
+    effect = `${backup.name} deployed from the Backups without spending an action.`;
+  } else if (name === "Last One Standing") {
+    const target = raidTargetCandidates(room)
+      .filter((entry) => entry.playerId === playerId && entry.unit.hp <= entry.unit.max / 2)
+      .sort((a, b) => a.unit.hp - b.unit.hp)[0];
+    if (!target) return { ok: false, error: "No character below half Health can use Last One Standing." };
+    target.unit.raidLastStandBoost = true;
+    effect = `${target.unit.name}'s next attack gains +15 damage.`;
+  } else if (name === "Refuse to Fall") {
+    const fallen = team?.fallen?.shift();
+    if (!fallen) return { ok: false, error: "You have no defeated character to revive." };
+    fallen.hp = Math.max(1, Math.ceil(fallen.max * 0.25));
+    team.backups.push(fallen);
+    effect = `${fallen.name} returned to the Backups at 25% Health.`;
+  } else if (name === "Danger Close") {
+    const target = bossTarget || findBossTarget(room, room.judge.id);
+    if (!target) return { ok: false, error: "No enemy can be targeted." };
+    const damage = resolveBossDamage(room, target, 30);
+    const allies = raidTargetCandidates(room);
+    const struck = allies[Math.floor(Math.random() * allies.length)];
+    if (struck) {
+      struck.unit.hp = Math.max(0, struck.unit.hp - 10);
+      if (struck.unit.hp === 0) {
+        const struckTeam = room.teams.get(struck.playerId);
+        struckTeam.board[struck.slot] = null;
+        struckTeam.fallen = [...(struckTeam.fallen || []), struck.unit];
+        reinforceRaidTeam(room, struckTeam, struck.slot);
+        raidEvent(room, { kind: "player-defeat", defeatedName: struck.unit.name, side: "players" });
+      }
+    }
+    if (target.unit.hp === 0) defeatRaidBossUnit(room, target);
+    effect = `Danger Close dealt ${damage} to the enemy and 10 damage to ${struck?.unit.name || "an ally"}.`;
+  } else if (name === "Overcharge") {
+    if (!friendly) return { ok: false, error: "No friendly character can be overcharged." };
+    friendly.unit.raidOvercharge = true;
+    effect = `${friendly.unit.name}'s next attack gains +20 damage, followed by 15 backlash damage.`;
+  } else if (name === "No Turning Back") {
+    room.actions += 1;
+    for (const id of room.turnOrder) if (id !== playerId) room.extraActions.set(id, (room.extraActions.get(id) || 0) + 1);
+    room.bossDamageBonus = 10;
+    effect = "Both players gained one attack, but enemy attacks gain +10 damage this round.";
+  } else if (name === "Against All Odds") {
+    const allies = raidTargetCandidates(room);
+    if (allies.length > 6) return { ok: false, error: "Against All Odds requires six or fewer deployed allied characters." };
+    allies.forEach(({ unit }) => {
+      unit.hp = Math.min(unit.max, unit.hp + 15);
+    });
+    effect = "Every deployed allied character recovered 15 Health.";
+  } else if (name === "Final Gambit") {
+    const usedId = team?.used?.find((id) => team.board.some((unit) => unit?.id === id && unit.hp > 0));
+    if (!usedId) return { ok: false, error: "No character has attacked yet this turn." };
+    team.used = team.used.filter((id) => id !== usedId);
+    const unit = team.board.find((entry) => entry?.id === usedId);
+    effect = `${unit?.name || "One character"} may attack again this turn.`;
+  } else if (name === "Draw Their Fire") {
+    if (!friendly) return { ok: false, error: "No friendly character can draw enemy fire." };
+    room.drawTheirFire = { playerId: friendly.playerId, unitId: friendly.unit.id };
+    effect = `${friendly.unit.name} will draw all enemy attacks and take 10 less damage from each.`;
+  } else if (name === "Till All Are One") {
+    raidTargetCandidates(room).forEach(({ unit }) => {
+      unit.hp = Math.min(unit.max, unit.hp + 10);
+    });
+    room.extraRepositions += 1;
+    effect = "Every deployed ally recovered 10 Health and both teams gained one reposition move.";
+  }
+  return { ok: true, effect };
 }
 function defeatRaidBossUnit(room, target) {
   if (target.unit.id === "quintesson-judge") {
@@ -924,6 +1137,17 @@ io.on("connection", (socket) => {
     room.bossIntel.set(socket.id, { occupied: new Set(), empty: new Set() });
     reply({ ok: true });
     if (room.decks.size === 2) {
+      room.stage = "briefing";
+      room.briefingReady.clear();
+      room.log.push("The complete boss roster is open for both players to inspect.");
+    }
+    emitRaid(room);
+  });
+  socket.on("raid-briefing-ready", () => {
+    const room = raidRooms.get(socket.data.raidCode);
+    if (!room || room.stage !== "briefing") return;
+    room.briefingReady.add(socket.id);
+    if (room.briefingReady.size === 2) {
       room.stage = "deployment";
       room.log.push("Both players may now place six characters on their own 3 x 3 boards simultaneously.");
     }
@@ -955,7 +1179,7 @@ io.on("connection", (socket) => {
       room.turnOrder = [...room.players.keys()];
       room.turnIndex = 0;
       room.round = 0;
-      room.log.push(`${room.players.get(room.turnOrder[0])?.name || "Player"} acts first. Each player has two actions before the boss turn.`);
+      room.log.push(`${room.players.get(room.turnOrder[0])?.name || "Player"} acts first. Each player has three actions before the boss turn.`);
       startRaidRound(room);
     } else emitRaid(room);
   });
@@ -993,6 +1217,7 @@ io.on("connection", (socket) => {
       return;
     }
     let damage = raidAttackDamage(room, team, attacker, attackerSlot);
+    damage = applyRaidBattleAttackBonuses(room, socket.id, attacker, target, damage);
     damage = resolveBossDamage(room, target, damage);
     if (target.slot >= 0) room.courtFeedback.set(target.slot, "OCCUPIED");
     const targetName = target.unit.id === room.judge.id ? target.unit.name : "a hidden Quintesson troop";
@@ -1007,6 +1232,16 @@ io.on("connection", (socket) => {
       defeated: target.unit.hp === 0,
     });
     if (target.unit.hp === 0) defeatRaidBossUnit(room, target);
+    if (attacker.raidOverchargeBacklash) {
+      attacker.raidOverchargeBacklash = false;
+      attacker.hp = Math.max(0, attacker.hp - 15);
+      if (attacker.hp === 0) {
+        team.board[attackerSlot] = null;
+        team.fallen = [...(team.fallen || []), attacker];
+        reinforceRaidTeam(room, team, attackerSlot);
+        raidEvent(room, { kind: "player-defeat", defeatedName: attacker.name, side: "players" });
+      }
+    }
     if (team.faceOff && target.unit.hp > 0) {
       team.faceOff = false;
       drawRaidCards(room, 1);
@@ -1029,8 +1264,19 @@ io.on("connection", (socket) => {
         ok: false,
         error: "That Battle Card is not in the shared hand.",
       });
+    if (!bossRushBattleCards.some((card) => card.name === name))
+      return reply({ ok: false, error: "Only Boss Rush Battle Cards can be played in Boss Rush." });
+    const result = playBossRushCard(room, socket.id, name, targetId, targetSlot);
+    if (!result.ok) return reply(result);
+    room.battleHand.splice(cardIndex, 1);
+    room.battlePlayed = true;
+    room.log.push(result.effect);
+    raidEvent(room, { kind: "battle", name, side: "players" });
+    reply({ ok: true });
+    emitRaid(room);
+    return;
     const ownTarget = targetId ? findPlayerUnit(room, targetId, socket.id) : null;
-    const bossTarget = Number.isInteger(targetSlot) && targetSlot >= 0 ? findBossTarget(room, undefined, targetSlot) : null;
+    const bossTarget = targetId ? findBossTarget(room, targetId, targetSlot) : Number.isInteger(targetSlot) && targetSlot >= 0 ? findBossTarget(room, undefined, targetSlot) : null;
     const amount = name === "Power Of The Primes" ? 35 : 10;
     let effect = `${name} resolved.`;
     if (name === "Roll Out" || name === "Power Of The Primes") {
@@ -1133,7 +1379,7 @@ io.on("connection", (socket) => {
       effect = "Dark Reflections armed the strongest defeated Quintesson Damage for your next attack.";
     }
     // Battle Cards are a shared tactical interrupt; playing one does not consume
-    // the active player's two attack actions.
+    // the active player's three attack actions.
     room.battleHand.splice(cardIndex, 1);
     room.battlePlayed = true;
     room.log.push(effect);
@@ -1331,9 +1577,9 @@ io.on("connection", (socket) => {
       const opponent = [...room.teams.entries()].find(([id]) => id !== socket.id)?.[1];
       effect = "Jhiaxus forced the Tribunal to expose the opponent's Backup count: " + (opponent?.backups.length || 0) + " remain.";
     }
-    // A unique ability is a once-per-round effect, not one of the player's two attacks.
+    // A unique ability is a once-per-round effect, not one of the player's three attacks.
     // Keeping the attack budget separate lets a player use an ability and still make
-    // both attacks promised by Boss Rush.
+    // all three attacks promised by Boss Rush.
     source.abilityUses = Math.max(0, source.abilityUses - 1);
     team.usedAbilities = [...(team.usedAbilities || []), sourceId];
     room.log.push(effect);
@@ -1419,7 +1665,8 @@ io.on("connection", (socket) => {
     if (team) team.used = [];
     if (room.turnIndex === 0) {
       room.turnIndex = 1;
-      room.actions = 2;
+      room.actions = 3 + (room.extraActions.get(room.turnOrder[1]) || 0);
+      room.extraActions.delete(room.turnOrder[1]);
       emitRaid(room);
     } else raidBossTurn(room);
   });

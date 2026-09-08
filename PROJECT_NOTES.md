@@ -46,3 +46,5 @@ Character Card border history:
 - Boss Rush scale and control update: Phase-Shift Armor, an offset cyan-and-magenta frame whose staggered plates appear to occupy two positions at once.
 - Boss Rush hub and loadout update: Moonbase Relay, a lunar-gray command theme with cobalt relay lanes, copper signal lights and orbital-grid geometry.
 - Boss Rush hub and loadout update: Orbital Clamp, a graphite-and-copper card frame built from squared docking jaws, blue locking rails and luminous corner bolts.
+- Boss Rush battle-system update: Titan Siege Command, a gunmetal operations theme with crimson alert lanes, amber targeting pips and heavy fortress-panel geometry.
+- Boss Rush battle-system update: Raidbreaker Frame, a reinforced black-steel card border with split crimson armor plates, hazard-gold rivets and a central breach notch.

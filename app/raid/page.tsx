@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { io, type Socket } from "socket.io-client";
 import Link from "next/link";
-import { allUnits, starterDeck, type Unit } from "@/lib/card-data";
+import { allUnits, starterDeck, type BossRushBattleCard, type Unit } from "@/lib/card-data";
 
-type RaidStage = "lobby" | "deckbuilding" | "deployment" | "combat" | "boss" | "reposition" | "victory" | "defeat";
+type RaidStage = "lobby" | "deckbuilding" | "briefing" | "deployment" | "combat" | "boss" | "reposition" | "victory" | "defeat";
 type RaidBossUnit = {
   id: string;
   name: string;
@@ -58,10 +58,13 @@ type RaidState = {
   players: RaidPlayer[];
   judge: RaidBossUnit;
   boss: RaidBossUnit[];
+  bossRoster: RaidBossUnit[];
   bossBoard: (RaidBossSlot | null)[];
   courtFeedback?: Record<number, "MISS" | "OCCUPIED">;
   battleHand: string[];
+  battleCards: BossRushBattleCard[];
   battlePlayed: boolean;
+  briefingReady: boolean;
   log: string[];
   eventSeq: number;
 };
@@ -218,6 +221,12 @@ export default function RaidPage() {
       },
     );
   }
+  function playBattleCard(name: string) {
+    if (!active || state?.battlePlayed) return;
+    socket?.emit("raid-play-battle", { name }, (reply: RaidReply) => {
+      setMessage(reply.ok ? `${name} activated.` : reply.error || "That Boss Rush Battle Card cannot be played now.");
+    });
+  }
   function choosePlacement(slot: number) {
     if (!placing || !placement || ownUnitAt(slot)) return;
     socket?.emit("raid-place", { unitId: placement, slot }, (reply: RaidReply) => {
@@ -232,7 +241,7 @@ export default function RaidPage() {
   }
   const abilityTargets = new Set(["eject", "bombshell", "shockwave", "head", "arachnia"]);
   const raidActiveAbilities = new Set(["eject", "wheeljack", "soundwave", "bombshell", "overlord", "shockwave", "pmega", "wasp", "head", "arachnia", "razor", "getaway", "grapple", "highbrow", "hoist", "bludgeon", "jhiaxus", "rumble", "rattrap", "rhinox", "cyclonus"]);
-  function useAbility(sourceId: string) {
+  function activateAbility(sourceId: string) {
     if (!active || !me?.team) return;
     const source = me.team.board.find((unit) => unit?.id === sourceId) || me.team.backups.find((unit) => unit?.id === sourceId);
     if (!source || !(source.abilityUses > 0) || me.team.usedAbilities?.includes(sourceId)) return;
@@ -320,8 +329,8 @@ export default function RaidPage() {
           <div className="raid-rules-callout">
             <b>Round order</b>
             <span>Simultaneous placement</span>
-            <span>Player 1: 2 actions</span>
-            <span>Player 2: 2 actions</span>
+            <span>Player 1: 3 attacks</span>
+            <span>Player 2: 3 attacks</span>
             <span>Boss turn + 2 moves</span>
           </div>
           <label>
@@ -457,6 +466,40 @@ export default function RaidPage() {
       </main>
     );
 
+  if (state.stage === "briefing")
+    return (
+      <main className="raid-page raid-briefing-page">
+        <header className="raid-header">
+          <div>
+            <p className="eyebrow">ENEMY BRIEFING · {state.code}</p>
+            <h1>Know the Quintesson court</h1>
+          </div>
+          <button className="primary" disabled={state.briefingReady} onClick={() => socket?.emit("raid-briefing-ready")}>
+            {state.briefingReady ? "Waiting for ally" : "Ready to deploy"}
+          </button>
+        </header>
+        <section className="raid-briefing-intro">
+          <p>Review the full boss and every support card before deployment. Court positions will be concealed once the fight begins.</p>
+          <strong>QUINTESSON JUDGE · 850 HP · 15 DMG</strong>
+        </section>
+        <section className="raid-briefing-roster" aria-label="Quintesson boss and support cards">
+          {state.bossRoster.map((unit, index) => (
+            <article key={unit.id} className={index === 0 ? "briefing-boss" : "briefing-support"} onMouseEnter={() => setInspected(unit)} onMouseLeave={() => setInspected(null)}>
+              <CardImage src={unit.image} alt={unit.name} />
+              <div>
+                <p>{index === 0 ? "BOSS" : unit.id === "allicon" ? "POSSIBLE REINFORCEMENT" : "COURT SUPPORT"}</p>
+                <h2>{unit.name}</h2>
+                <span>{unit.role} · {unit.max} HP · {unit.dmg} DMG</span>
+                <small>{unit.ability}</small>
+              </div>
+            </article>
+          ))}
+        </section>
+        <p className="raid-message">Both players must acknowledge the enemy briefing before simultaneous placement begins.</p>
+        <RaidCardInspector unit={inspected} />
+      </main>
+    );
+
   if (state.stage === "deployment")
     return (
       <main className="raid-page raid-combat-page">
@@ -538,6 +581,10 @@ export default function RaidPage() {
 
   const finished = state.stage === "victory" || state.stage === "defeat";
   const activeName = state.players.find((player) => player.id === state.activeId)?.name;
+  const availableAbilities = [
+    ...(me?.team?.board.filter((unit): unit is Unit => Boolean(unit && raidActiveAbilities.has(unit.id))) || []),
+    ...(me?.team?.backups.filter((unit) => unit.id === "galvatron") || []),
+  ];
   return (
     <main className="raid-page raid-combat-page">
       <header className="raid-header">
@@ -571,6 +618,58 @@ export default function RaidPage() {
           </Link>
         ) : null}
       </header>
+      <section className="raid-action-console" aria-label="Boss Rush actions">
+        <div className="raid-ability-controls">
+          <div className="raid-console-heading">
+            <div>
+              <p>CHARACTER SYSTEMS</p>
+              <h2>Unique abilities</h2>
+            </div>
+            <span>{active ? "AVAILABLE DURING YOUR TURN" : "STAND BY"}</span>
+          </div>
+          <div className="raid-ability-list">
+            {availableAbilities.length ? (
+              availableAbilities.map((unit) => {
+                const used = me?.team?.usedAbilities?.includes(unit.id);
+                return (
+                  <button key={unit.id} disabled={!active || used || unit.abilityUses <= 0} onClick={() => activateAbility(unit.id)} onMouseEnter={() => setInspected(unit)} onMouseLeave={() => setInspected(null)}>
+                    <CardImage src={unit.image} alt="" />
+                    <span>
+                      <b>{unit.name}</b>
+                      <small>{unit.ability}</small>
+                    </span>
+                    <em>{used || unit.abilityUses <= 0 ? "USED" : abilitySource === unit.id ? "SELECT TARGET" : "ACTIVATE"}</em>
+                  </button>
+                );
+              })
+            ) : (
+              <p className="raid-console-empty">Your deployed characters have passive abilities. They resolve automatically when their conditions are met.</p>
+            )}
+          </div>
+        </div>
+        <div className="raid-battle-controls">
+          <div className="raid-console-heading">
+            <div>
+              <p>SHARED BOSS RUSH DECK</p>
+              <h2>Battle Cards</h2>
+            </div>
+            <span>{state.battlePlayed ? "CARD PLAYED THIS ROUND" : "ONE CARD PER ROUND"}</span>
+          </div>
+          <div className="raid-battle-hand">
+            {state.battleHand.map((name, index) => {
+              const card = state.battleCards.find((entry) => entry.name === name);
+              return (
+                <button key={`${name}-${index}`} className={`raid-battle-card rarity-${card?.rarity.toLowerCase() || "common"}`} disabled={!active || state.battlePlayed} onClick={() => playBattleCard(name)}>
+                  <span>{card?.rarity || "Boss Rush"}</span>
+                  <b>{name}</b>
+                  <small>{card?.effect || "Boss Rush tactical effect."}</small>
+                  <em>PLAY CARD</em>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </section>
       <section className="raid-arena">
         <section className="raid-player-boards-panel">
           <div className="raid-board-title">
@@ -608,26 +707,6 @@ export default function RaidPage() {
                               <CardImage src={unit.image} alt={unit.name} />
                               <b>{unit.name}</b>
                               <small>{own ? `${unit.hp}/${unit.max} HP · YOUR CARD` : `${unit.hp}/${unit.max} HP · ALLY CARD`}</small>
-                              {own && active && raidActiveAbilities.has(unit.id) && unit.abilityUses > 0 && !me?.team?.usedAbilities?.includes(unit.id) ? (
-                                <span
-                                  className="raid-ability-chip"
-                                  role="button"
-                                  tabIndex={0}
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    useAbility(unit.id);
-                                  }}
-                                  onKeyDown={(event) => {
-                                    if (event.key === "Enter" || event.key === " ") {
-                                      event.preventDefault();
-                                      event.stopPropagation();
-                                      useAbility(unit.id);
-                                    }
-                                  }}
-                                >
-                                  ABILITY
-                                </span>
-                              ) : null}
                               {animation?.targetId === unit.id && animation.damage ? <em className="raid-damage-pop">-{animation.damage}</em> : null}
                             </>
                           ) : (
@@ -716,17 +795,15 @@ export default function RaidPage() {
           </div>
         </section>
       </section>
-      {/* Shared Battle Cards are intentionally not rendered in Boss Rush; attacks and character abilities drive this mode. */}
       <section className="raid-command-panel">
         <div className="raid-command-status">
           <div>
             <p className="raid-command-kicker">COMBAT PHASE</p>
             <h2>{active ? "Your attack turn" : state.stage === "boss" ? "Quintesson turn" : state.stage === "reposition" ? "Repositioning" : "Co-op combat"}</h2>
-            <p>{active ? `${state.actions} attacks remaining. Each player gets exactly two attacks before the boss acts.` : "Your ally controls their own board. The Judge and court resolve after both players finish."}</p>
+            <p>{active ? `${state.actions} attacks remaining. Each player starts with three attacks before the boss acts.` : "Your ally controls their own board. The Judge and court resolve after both players finish."}</p>
             <p className="raid-ability-help">
-              <strong>Abilities:</strong> select the glowing ABILITY chip on one of your cards. Targeted abilities highlight a court space; passive abilities resolve automatically.
+              <strong>Abilities:</strong> activate unique abilities in the console above the board. Targeted abilities then highlight the court; passive abilities resolve automatically.
             </p>
-            <span className="raid-battle-disabled">BATTLE CARDS DISABLED IN BOSS RUSH</span>
           </div>
           <div className="raid-backup-area">
             <h3>Your Backups</h3>
@@ -754,26 +831,6 @@ export default function RaidPage() {
                     <small>
                       {unit.hp}/{unit.max} HP
                     </small>
-                    {active && unit.id === "galvatron" && unit.abilityUses > 0 && !me.team?.usedAbilities?.includes(unit.id) ? (
-                      <span
-                        className="raid-ability-chip"
-                        role="button"
-                        tabIndex={0}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          useAbility(unit.id);
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            useAbility(unit.id);
-                          }
-                        }}
-                      >
-                        ABILITY
-                      </span>
-                    ) : null}
                   </article>
                 ))
               ) : (

@@ -730,6 +730,43 @@ export const makeBattleDeck = () => {
   cards.splice(cards.indexOf("Surprise"), 1);
   return shuffled(cards);
 };
+
+export type BossRushBattleCard = {
+  name: string;
+  rarity: "Common" | "Uncommon" | "Rare" | "Legendary";
+  effect: string;
+};
+
+export const bossRushBattleCards: BossRushBattleCard[] = [
+  { name: "Coordinated Strike", rarity: "Common", effect: "The next attack made by each player against the same enemy deals +5 damage." },
+  { name: "Emergency Repairs", rarity: "Common", effect: "Heal one of the active player's characters by 15 Health." },
+  { name: "Cover Your Ally", rarity: "Common", effect: "One character takes 10 less damage from the next attack that hits it." },
+  { name: "Combat Analysis", rarity: "Common", effect: "Reveal one non-boss enemy until the end of the round." },
+  { name: "Repositioning Orders", rarity: "Common", effect: "Both players receive one additional move during the next reposition phase." },
+  { name: "Concentrated Fire", rarity: "Uncommon", effect: "The next three attacks against the same enemy deal +5 damage each." },
+  { name: "Tactical Withdrawal", rarity: "Uncommon", effect: "Swap a damaged deployed character with a Backup without spending a reposition move." },
+  { name: "Shared Energon", rarity: "Uncommon", effect: "Heal one character belonging to each player by 10 Health." },
+  { name: "Protective Formation", rarity: "Uncommon", effect: "Every deployed character takes 5 less damage during the next boss turn." },
+  { name: "Suppressing Fire", rarity: "Uncommon", effect: "One non-boss enemy cannot attack during the next boss turn." },
+  { name: "Exploit Weakness", rarity: "Uncommon", effect: "The next attack against the chosen enemy deals +10 damage." },
+  { name: "System Disruption", rarity: "Uncommon", effect: "Disable one non-boss enemy's ability through the next boss turn." },
+  { name: "Hold the Line", rarity: "Rare", effect: "The next friendly character that would be defeated remains alive with 10 Health." },
+  { name: "All-Out Assault", rarity: "Rare", effect: "Both players gain one additional action this round." },
+  { name: "Break Their Defences", rarity: "Rare", effect: "The boss loses damage reduction and protection for the rest of this round." },
+  { name: "Perfect Opening", rarity: "Rare", effect: "The next attack against the boss deals double damage, up to 40 total damage." },
+  { name: "Emergency Reinforcements", rarity: "Rare", effect: "Immediately deploy one Backup into an empty space if the board has fewer than six characters." },
+  { name: "Last One Standing", rarity: "Rare", effect: "A character at half Health or lower gains +15 Damage for its next attack." },
+  { name: "Refuse to Fall", rarity: "Rare", effect: "Revive one defeated character at 25% Health and place it in Backups." },
+  { name: "Danger Close", rarity: "Rare", effect: "Deal 30 damage to an enemy, but one friendly character takes 10 damage." },
+  { name: "Overcharge", rarity: "Rare", effect: "One character gains +20 Damage for its next attack, then takes 15 damage." },
+  { name: "No Turning Back", rarity: "Rare", effect: "Both players gain one action, but the boss gains +10 Damage during its next turn." },
+  { name: "Against All Odds", rarity: "Rare", effect: "When six or fewer allied characters remain deployed, heal every survivor by 15." },
+  { name: "Final Gambit", rarity: "Rare", effect: "One character that already attacked may immediately become available to attack again." },
+  { name: "Draw Their Fire", rarity: "Rare", effect: "Enemies target one chosen character when possible; it takes 10 less damage from each hit." },
+  { name: "Till All Are One", rarity: "Legendary", effect: "Heal every surviving allied character by 10 and give each player one extra reposition move." },
+];
+
+export const makeBossRushBattleDeck = () => shuffled(bossRushBattleCards.map((card) => card.name));
 export const starterDeck = (faction: Faction) => {
   const limits: Record<Role, number> = {
     Commander: 2,

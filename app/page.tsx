@@ -187,6 +187,7 @@ const themes = [
   ["tribunal-reckoning", "Tribunal Reckoning"],
   ["cybertron-war-room", "Cybertron War Room"],
   ["moonbase-relay", "Moonbase Relay"],
+  ["titan-siege-command", "Titan Siege Command"],
 ] as const;
 const cardBorders = [
   ["energon-edge", "Energon Edge"],
@@ -206,6 +207,7 @@ const cardBorders = [
   ["sharkticon-docket", "Sharkticon Docket"],
   ["phase-shift-armor", "Phase-Shift Armor"],
   ["orbital-clamp", "Orbital Clamp"],
+  ["raidbreaker-frame", "Raidbreaker Frame"],
 ] as const;
 const activeAbilities = new Set([
   "eject",
