@@ -45,6 +45,50 @@ const REPOSITION_DURATION_MS = Math.max(
   100,
   Number(process.env.REPOSITION_DURATION_MS || 30_000),
 );
+const STANDARD_CHALLENGES = new Set(["high-priority", "the-chosen"]);
+
+function normaliseStandardChallenges(value) {
+  return Array.isArray(value)
+    ? [...new Set(value.filter((id) => STANDARD_CHALLENGES.has(id)))].sort()
+    : [];
+}
+
+function buildPriorityTargets(room) {
+  const [firstId, secondId] = [...room.players.keys()];
+  const firstDeck = room.decks.get(firstId) || [];
+  const secondDeck = room.decks.get(secondId) || [];
+  const secondCapacity = new Map();
+  secondDeck.forEach((id) => {
+    const role = allUnits.find((unit) => unit.id === id)?.role;
+    if (role) secondCapacity.set(role, (secondCapacity.get(role) || 0) + 1);
+  });
+  const selectedByRole = new Map();
+  const firstTargets = [...firstDeck]
+    .sort(() => Math.random() - 0.5)
+    .filter((id) => {
+      const role = allUnits.find((unit) => unit.id === id)?.role;
+      const selected = selectedByRole.get(role) || 0;
+      if (!role || selected >= (secondCapacity.get(role) || 0)) return false;
+      selectedByRole.set(role, selected + 1);
+      return true;
+    })
+    .slice(0, 3);
+  const used = new Set();
+  const secondTargets = firstTargets.flatMap((cardId) => {
+    const role = allUnits.find((unit) => unit.id === cardId)?.role;
+    const candidates = secondDeck.filter(
+      (id) =>
+        !used.has(id) && allUnits.find((unit) => unit.id === id)?.role === role,
+    );
+    const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+    if (chosen) used.add(chosen);
+    return chosen ? [chosen] : [];
+  });
+  room.priorityTargets = new Map([
+    [firstId, firstTargets],
+    [secondId, secondTargets],
+  ]);
+}
 
 app.get("/", (_request, response) =>
   response.json({ service: "Hidden Front multiplayer", status: "online" }),
@@ -55,7 +99,7 @@ app.get("/health", (_request, response) =>
     rooms: rooms.size,
     raidRooms: raidRooms.size,
     quickMatchWaiting: quickMatchQueue.length,
-    version: 8,
+    version: 9,
   }),
 );
 
@@ -185,11 +229,28 @@ const raidCharacterById = new Map(allUnits.map((unit) => [unit.id, unit]));
 function freshRaidUnit(unit) {
   return structuredClone({ ...unit, hp: unit.max });
 }
-function legalRaidDeck(ids) {
+const RAID_CHALLENGES = new Set([
+  "no-battle-cards",
+  "six-characters",
+  "enemy-bonus-damage",
+]);
+function normaliseRaidChallenges(challenges) {
+  if (!Array.isArray(challenges)) return [];
+  return [
+    ...new Set(
+      challenges.filter((challenge) => RAID_CHALLENGES.has(challenge)),
+    ),
+  ].sort();
+}
+function raidChallengeActive(room, challenge) {
+  return room.challengeModes.includes(challenge);
+}
+function legalRaidDeck(ids, sixCharacterChallenge = false) {
+  const requiredSize = sixCharacterChallenge ? 6 : 9;
   if (
     !Array.isArray(ids) ||
-    ids.length !== 9 ||
-    new Set(ids).size !== 9 ||
+    ids.length !== requiredSize ||
+    new Set(ids).size !== requiredSize ||
     ids.some((id) => typeof id !== "string" || !raidCharacterById.has(id))
   )
     return null;
@@ -198,6 +259,7 @@ function legalRaidDeck(ids) {
   );
   const roles = { Commander: 0, Scout: 0, Trooper: 0, Tactician: 0 };
   for (const unit of units) roles[unit.role] += 1;
+  if (sixCharacterChallenge) return units;
   return roles.Commander === 2 &&
     roles.Scout === 3 &&
     roles.Trooper === 2 &&
@@ -206,13 +268,14 @@ function legalRaidDeck(ids) {
     : null;
 }
 
-function createRaidRoom(code, requestedBoss = "quintesson") {
+function createRaidRoom(code, requestedBoss = "quintesson", requestedChallenges = []) {
   const encounterId = requestedBoss === "unicron" ? "unicron" : "quintesson";
   const unicron = encounterId === "unicron";
   return {
     code,
     encounterId,
     encounterName: unicron ? "Unicron" : "Quintesson Judge",
+    challengeModes: normaliseRaidChallenges(requestedChallenges),
     players: new Map(),
     stage: "lobby",
     round: 0,
@@ -311,6 +374,7 @@ function raidPublic(room, viewer) {
     code: room.code,
     encounterId: room.encounterId,
     encounterName: room.encounterName,
+    challengeModes: room.challengeModes,
     bossColumns: unicron ? 3 : 3,
     bossRows: unicron ? 1 : 2,
     bossCardsVisible: unicron,
@@ -336,7 +400,9 @@ function raidPublic(room, viewer) {
     bossBoard: publicBossBoard(room),
     courtFeedback: Object.fromEntries(room.courtFeedback),
     battleHand: room.battleHand,
-    battleCards: bossRushBattleCards,
+    battleCards: raidChallengeActive(room, "no-battle-cards")
+      ? []
+      : bossRushBattleCards,
     battlePlayed: room.battlePlayed,
     briefingReady: room.briefingReady.has(viewer),
     bossRoster: unicron
@@ -382,6 +448,7 @@ function firstEmptyPlayerSlot(room, playerId) {
   return -1;
 }
 function drawRaidCards(room, amount = 1) {
+  if (raidChallengeActive(room, "no-battle-cards")) return;
   for (let i = 0; i < amount; i++) {
     if (!room.battleDeck.length) room.battleDeck = makeBossRushBattleDeck();
     const card = room.battleDeck.shift();
@@ -797,6 +864,8 @@ function raidBossTurn(room) {
       continue;
     }
     let damage = attacker.dmg + room.bossDamageBonus;
+    if (raidChallengeActive(room, "enemy-bonus-damage"))
+      damage += attacker.id === room.judge.id ? 15 : 10;
     if (
       attacker.id === "the-fallen" &&
       bossTroops(room).some(
@@ -1470,7 +1539,10 @@ function queueQuickMatch(socket, name) {
       waiting.data.raidCode
     )
       continue;
-    const room = createRoom(nextQuickRoomCode());
+    const room = createRoom(
+      nextQuickRoomCode(),
+      normaliseStandardChallenges(waiting.data.standardChallenges),
+    );
     room.quickMatch = true;
     rooms.set(room.code, room);
     addQuickPlayer(room, waiting, waiting.data.quickName || "Player");
@@ -1481,6 +1553,9 @@ function queueQuickMatch(socket, name) {
     return { matched: true, code: room.code };
   }
   socket.data.quickName = name;
+  socket.data.standardChallenges = normaliseStandardChallenges(
+    socket.data.standardChallenges,
+  );
   quickMatchQueue.push(socket.id);
   return { matched: false };
 }
@@ -1494,10 +1569,11 @@ function clean(value, max) {
     : "";
 }
 
-function createRoom(code) {
+function createRoom(code, challenges = []) {
   return {
     code,
     quickMatch: false,
+    challenges: normaliseStandardChallenges(challenges),
     players: new Map(),
     started: false,
     decks: new Map(),
@@ -1512,6 +1588,7 @@ function createRoom(code) {
     turnDeadline: 0,
     repositionDeadline: 0,
     skipRepositionRound: 0,
+    priorityTargets: new Map(),
   };
 }
 
@@ -1524,6 +1601,7 @@ function publicRoom(room) {
       ready,
     })),
     started: room.started,
+    challenges: room.challenges,
   };
 }
 
@@ -1538,7 +1616,19 @@ function sendDecksReady(room, id) {
   const opponent = [...room.decks.entries()].find(
     ([other]) => other !== id,
   )?.[1];
-  if (opponent) io.to(id).emit("decks-ready", { opponent });
+  if (opponent)
+    io.to(id).emit("decks-ready", {
+      opponent,
+      priority: room.challenges.includes("high-priority")
+        ? {
+            own: room.priorityTargets.get(id) || [],
+            opponent:
+              room.priorityTargets.get(
+                [...room.players.keys()].find((other) => other !== id),
+              ) || [],
+          }
+        : undefined,
+    });
 }
 
 function syncPlayer(socket) {
@@ -1713,10 +1803,13 @@ io.on("connection", (socket) => {
   const pendingRaid = pendingRaidDisconnects.get(socket.id);
   if (pendingRaid) clearTimeout(pendingRaid.timer);
   pendingRaidDisconnects.delete(socket.id);
-  socket.emit("server-ready", { version: 8, recovered: socket.recovered });
+  socket.emit("server-ready", { version: 9, recovered: socket.recovered });
 
   socket.on("quick-match", (payload = {}, reply = () => {}) => {
     const name = clean(payload.name, 20) || "Player";
+    socket.data.standardChallenges = normaliseStandardChallenges(
+      payload.challenges,
+    );
     detachRaid(socket);
     detach(socket);
     queueQuickMatch(socket, name);
@@ -1743,7 +1836,8 @@ io.on("connection", (socket) => {
   socket.on("raid-join", (payload = {}, reply = () => {}) => {
     const code = clean(payload.code, 12).toUpperCase(),
       name = clean(payload.name, 20) || "Player",
-      boss = payload.boss === "unicron" ? "unicron" : "quintesson";
+      boss = payload.boss === "unicron" ? "unicron" : "quintesson",
+      challenges = normaliseRaidChallenges(payload.challenges);
     if (code.length < 3)
       return reply({
         ok: false,
@@ -1761,7 +1855,7 @@ io.on("connection", (socket) => {
     detachRaid(socket);
     let room = raidRooms.get(code);
     if (!room) {
-      room = createRaidRoom(code, boss);
+      room = createRaidRoom(code, boss, challenges);
       raidRooms.set(code, room);
     }
     if (room.encounterId !== boss)
@@ -1791,17 +1885,19 @@ io.on("connection", (socket) => {
     const room = raidRooms.get(socket.data.raidCode);
     if (!room || room.stage !== "deckbuilding")
       return reply({ ok: false, error: "This Raid is not accepting decks." });
-    const units = legalRaidDeck(ids);
+    const sixCharacterChallenge = raidChallengeActive(room, "six-characters");
+    const units = legalRaidDeck(ids, sixCharacterChallenge);
     if (!units)
       return reply({
         ok: false,
-        error:
-          "Submit nine unique characters with 2 Commanders, 3 Scouts, 2 Troopers and 2 Tacticians.",
+        error: sixCharacterChallenge
+          ? "Submit exactly six unique characters for this challenge."
+          : "Submit nine unique characters with 2 Commanders, 3 Scouts, 2 Troopers and 2 Tacticians.",
       });
     room.decks.set(socket.id, ids);
     room.teams.set(socket.id, {
       board: Array(9).fill(null),
-      backups: units.slice(6),
+      backups: sixCharacterChallenge ? [] : units.slice(6),
       pending: units.slice(0, 6),
       used: [],
       usedAbilities: [],
@@ -2028,6 +2124,11 @@ io.on("connection", (socket) => {
     ({ name, targetId, targetSlot, row } = {}, reply = () => {}) => {
       const room = raidRooms.get(socket.data.raidCode),
         team = room?.teams.get(socket.id);
+      if (room && raidChallengeActive(room, "no-battle-cards"))
+        return reply({
+          ok: false,
+          error: "Battle Cards are disabled by this Boss Rush challenge.",
+        });
       if (
         !room ||
         !team ||
@@ -2885,7 +2986,7 @@ io.on("connection", (socket) => {
     detach(socket);
     let room = rooms.get(code);
     if (!room) {
-      room = createRoom(code);
+      room = createRoom(code, normaliseStandardChallenges(payload.challenges));
       rooms.set(code, room);
     }
     if (room.players.size >= 2)
@@ -2928,12 +3029,48 @@ io.on("connection", (socket) => {
       !Array.isArray(deck) ||
       deck.length !== 9 ||
       new Set(deck).size !== 9 ||
-      deck.some((id) => typeof id !== "string")
+      deck.some(
+        (id) =>
+          typeof id !== "string" || !allUnits.some((unit) => unit.id === id),
+      )
     ) {
       return respond({
         ok: false,
         error: "Your deck must contain exactly nine different character cards.",
       });
+    }
+    const deckRoles = deck.map(
+      (id) => allUnits.find((unit) => unit.id === id)?.role,
+    );
+    const roleCount = (role) =>
+      deckRoles.filter((candidate) => candidate === role).length;
+    const standardDeck =
+      roleCount("Commander") === 2 &&
+      roleCount("Scout") === 3 &&
+      roleCount("Trooper") === 2 &&
+      roleCount("Tactician") === 2;
+    const barrageDeck =
+      deck.includes("barrage") &&
+      roleCount("Commander") === 3 &&
+      roleCount("Scout") === 2 &&
+      roleCount("Trooper") === 2 &&
+      roleCount("Tactician") === 2;
+    if (!standardDeck && !barrageDeck)
+      return respond({
+        ok: false,
+        error: "Your deck does not match the required class composition.",
+      });
+    if (room.challenges.includes("the-chosen")) {
+      const legalChosen =
+        roleCount("Commander") === 2 &&
+        roleCount("Tactician") === 2 &&
+        roleCount("Trooper") === 2 &&
+        roleCount("Scout") === 3;
+      if (!legalChosen)
+        return respond({
+          ok: false,
+          error: "The Chosen must lock 2 Commanders, 2 Tacticians, 2 Troopers and 3 Scouts.",
+        });
     }
     if (
       room.stage === "deployment" &&
@@ -2958,6 +3095,7 @@ io.on("connection", (socket) => {
         "match-status",
         "Deck locked. Waiting for your opponent to finish building.",
       );
+    if (room.challenges.includes("high-priority")) buildPriorityTargets(room);
     room.stage = "deployment";
     for (const [id] of room.players) sendDecksReady(room, id);
   });

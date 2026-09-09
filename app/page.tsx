@@ -82,6 +82,7 @@ import {
   shuffled,
   starterDeck,
   type Faction,
+  type Role,
   type Slot,
   type Unit,
 } from "@/lib/card-data";
@@ -90,6 +91,7 @@ type Phase =
   | "start"
   | "multiplayer"
   | "waiting"
+  | "chosen"
   | "build"
   | "opponent"
   | "deploy"
@@ -175,6 +177,114 @@ type OnlineCombatAction = (
   | { kind: "toxic-space"; position: number; untilRound: number }
 ) & { actorName: string };
 type DeckSubmitResponse = { ok: boolean; waiting?: boolean; error?: string };
+type StandardChallenge = "high-priority" | "the-chosen";
+
+const standardChallengeOptions: {
+  id: StandardChallenge;
+  name: string;
+  description: string;
+}[] = [
+  {
+    id: "high-priority",
+    name: "High Priority",
+    description:
+      "Three random characters become critical targets. Lose them all and the match ends; the enemy receives the same class profile.",
+  },
+  {
+    id: "the-chosen",
+    name: "The Chosen",
+    description:
+      "Build both teams through an animated three-card draw, one class at a time.",
+  },
+];
+const chosenClassOrder: { role: Role; amount: number }[] = [
+  { role: "Commander", amount: 2 },
+  { role: "Tactician", amount: 2 },
+  { role: "Trooper", amount: 2 },
+  { role: "Scout", amount: 3 },
+];
+
+function normaliseStandardChallenges(value: unknown): StandardChallenge[] {
+  if (!Array.isArray(value)) return [];
+  return standardChallengeOptions
+    .map((option) => option.id)
+    .filter((id) => value.includes(id));
+}
+
+function randomChosenDeck() {
+  return chosenClassOrder.flatMap(({ role, amount }) =>
+    shuffled(allUnits.filter((unit) => unit.role === role)).slice(0, amount),
+  );
+}
+
+function mirroredPriorityTargets(player: Unit[], enemy: Unit[]) {
+  const enemyCapacity = new Map<Role, number>();
+  enemy.forEach((unit) =>
+    enemyCapacity.set(unit.role, (enemyCapacity.get(unit.role) || 0) + 1),
+  );
+  const selectedByRole = new Map<Role, number>();
+  const playerTargets = shuffled(player)
+    .filter((unit) => {
+      const selected = selectedByRole.get(unit.role) || 0;
+      if (selected >= (enemyCapacity.get(unit.role) || 0)) return false;
+      selectedByRole.set(unit.role, selected + 1);
+      return true;
+    })
+    .slice(0, 3);
+  const used = new Set<string>();
+  const enemyTargets = playerTargets.flatMap((target) => {
+    const match = shuffled(
+      enemy.filter((unit) => unit.role === target.role && !used.has(unit.id)),
+    )[0];
+    if (match) used.add(match.id);
+    return match ? [match] : [];
+  });
+  return {
+    player: playerTargets.map((unit) => unit.id),
+    enemy: enemyTargets.map((unit) => unit.id),
+  };
+}
+
+function StandardChallengePicker({
+  selected,
+  onChange,
+  disabled = false,
+}: {
+  selected: StandardChallenge[];
+  onChange: (value: StandardChallenge[]) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <fieldset className="standard-challenge-picker">
+      <legend>
+        Challenge modes <span>Mix and match</span>
+      </legend>
+      {standardChallengeOptions.map((option) => {
+        const active = selected.includes(option.id);
+        return (
+          <button
+            type="button"
+            key={option.id}
+            className={active ? "active" : ""}
+            disabled={disabled}
+            aria-pressed={active}
+            onClick={() =>
+              onChange(
+                active
+                  ? selected.filter((id) => id !== option.id)
+                  : [...selected, option.id],
+              )
+            }
+          >
+            <span>{active ? "ON" : "OFF"}</span>
+            <b>{option.name}</b>
+            <small>{option.description}</small>
+          </button>
+        );
+      })}
+    </fieldset>
+  );
+}
 
 const themes = [
   ["cybertron", "Cybertron Command"],
@@ -215,6 +325,8 @@ const themes = [
   ["aerialbot-skyforge", "Aerialbot Skyforge"],
   ["chaos-bringer-singularity", "Chaos-Bringer Singularity"],
   ["decepticon-war-foundry", "Decepticon War Foundry"],
+  ["proving-ground", "Cybertron Proving Ground"],
+  ["iacon-jackpot", "Iacon Jackpot"],
 ] as const;
 const cardBorders = [
   ["energon-edge", "Energon Edge"],
@@ -240,6 +352,8 @@ const cardBorders = [
   ["seeker-contrail-frame", "Seeker Contrail Frame"],
   ["planet-maw-frame", "Planet Maw Frame"],
   ["insecticon-carapace-frame", "Insecticon Carapace Frame"],
+  ["trial-circuit-frame", "Trial Circuit Frame"],
+  ["triple-reel-frame", "Triple-Reel Frame"],
 ] as const;
 const activeAbilities = new Set([
   "eject",
@@ -452,7 +566,18 @@ function RulesModal() {
             </p>
           </section>
           <section>
-            <h3>14. Online co-op Quintesson Raid</h3>
+            <h3>14. Solo and multiplayer challenges</h3>
+            <p>
+              Challenge modes may be combined. High Priority marks three random
+              cards on each team with the same class profile; losing all three
+              ends the match immediately. The Chosen replaces manual deck
+              building with repeated three-card draws in Commander, Tactician,
+              Trooper and Scout order. Choose one result after every spin until
+              the nine-card team is complete.
+            </p>
+          </section>
+          <section>
+            <h3>15. Online co-op Quintesson Raid</h3>
             <p>
               Raid is a separate two-player PvE mode. Each player brings a legal
               nine-character deck: six deploy and three remain as Backups. Each
@@ -513,9 +638,11 @@ function CombatLogModal({ log }: { log: string[] }) {
 function EnemyRosterCards({
   units,
   defeated,
+  priorityIds = [],
 }: {
   units: Unit[];
   defeated: Unit[];
+  priorityIds?: string[];
 }) {
   const inspect = useContext(CardInspectContext),
     dead = new Set(defeated.map((unit) => unit.id));
@@ -529,6 +656,11 @@ function EnemyRosterCards({
           onMouseLeave={() => inspect(null)}
         >
           <img src={unit.image} alt={`${unit.name}, ${unit.role}`} />
+          {priorityIds.includes(unit.id) && (
+            <span className="priority-target-badge">
+              <Crosshair /> HIGH PRIORITY
+            </span>
+          )}
           <figcaption>
             <b>{unit.name}</b>
             <span>
@@ -550,9 +682,11 @@ function EnemyRosterCards({
 function EnemyTeamModal({
   units,
   defeated,
+  priorityIds = [],
 }: {
   units: Unit[];
   defeated: Unit[];
+  priorityIds?: string[];
 }) {
   if (!units.length) return null;
   return (
@@ -570,7 +704,11 @@ function EnemyTeamModal({
             hidden.
           </DialogDescription>
         </DialogHeader>
-        <EnemyRosterCards units={units} defeated={defeated} />
+        <EnemyRosterCards
+          units={units}
+          defeated={defeated}
+          priorityIds={priorityIds}
+        />
       </DialogContent>
     </Dialog>
   );
@@ -586,6 +724,7 @@ function AppTools({
   log,
   enemyRoster,
   enemyScrap,
+  enemyPriorityIds,
 }: {
   theme: string;
   setTheme: (v: string) => void;
@@ -596,12 +735,17 @@ function AppTools({
   log: string[];
   enemyRoster: Unit[];
   enemyScrap: Unit[];
+  enemyPriorityIds: string[];
 }) {
   return (
     <div className="app-tools">
       <RulesModal />
       <CombatLogModal log={log} />
-      <EnemyTeamModal units={enemyRoster} defeated={enemyScrap} />
+      <EnemyTeamModal
+        units={enemyRoster}
+        defeated={enemyScrap}
+        priorityIds={enemyPriorityIds}
+      />
       <details className="settings-menu">
         <summary className="tool-button">
           <Settings size={17} /> Settings
@@ -684,11 +828,13 @@ function CharacterCard({
   hidden = false,
   small = false,
   used = false,
+  highPriority = false,
 }: {
   unit: Unit;
   hidden?: boolean;
   small?: boolean;
   used?: boolean;
+  highPriority?: boolean;
 }) {
   const inspect = useContext(CardInspectContext);
   if (hidden)
@@ -705,6 +851,11 @@ function CharacterCard({
       onMouseLeave={() => inspect(null)}
     >
       <img src={unit.image} alt={unit.name} />
+      {highPriority && (
+        <span className="priority-target-badge compact">
+          <Crosshair /> PRIORITY
+        </span>
+      )}
       <div className="card-hud">
         <b>{unit.name}</b>
         <span>
@@ -815,7 +966,7 @@ function MultiplayerLobby({
   onStart,
 }: {
   onSolo: () => void;
-  onStart: (socket: Socket) => void;
+  onStart: (socket: Socket, challenges: StandardChallenge[]) => void;
 }) {
   const [server, setServer] = useState(
       "https://hidden-front-server.onrender.com",
@@ -830,6 +981,7 @@ function MultiplayerLobby({
     [quickSearching, setQuickSearching] = useState(false);
   const [socket, setSocket] = useState<Socket | null>(null);
   const [section, setSection] = useState<"battle" | "boss-rush">("battle");
+  const [challenges, setChallenges] = useState<StandardChallenge[]>([]);
   const inRoom = players.length > 0;
   function join() {
     const url = server.trim().replace(/\/$/, "");
@@ -845,7 +997,7 @@ function MultiplayerLobby({
       setConnected(true);
       next.emit(
         "join-room",
-        { name, code },
+        { name, code, challenges },
         (result: { ok: boolean; error?: string }) =>
           setMessage(
             result.ok
@@ -862,13 +1014,24 @@ function MultiplayerLobby({
     });
     next.on(
       "room-state",
-      (room: { players: RoomPlayer[]; started: boolean }) => {
+      (room: {
+        players: RoomPlayer[];
+        started: boolean;
+        challenges?: unknown;
+      }) => {
         setPlayers(room.players);
+        if (room.players.length)
+          setChallenges(normaliseStandardChallenges(room.challenges));
         if (room.started)
           setMessage("Both players are ready. Opening deck building…");
       },
     );
-    next.on("match-ready", () => onStart(next));
+    next.on("match-ready", (data: { room?: { challenges?: unknown } }) =>
+      onStart(
+        next,
+        normaliseStandardChallenges(data?.room?.challenges ?? challenges),
+      ),
+    );
     next.on("disconnect", () => setConnected(false));
   }
   function quickMatch() {
@@ -886,7 +1049,7 @@ function MultiplayerLobby({
       setConnected(true);
       next.emit(
         "quick-match",
-        { name },
+        { name, challenges },
         (result: { ok: boolean; waiting?: boolean; error?: string }) => {
           if (!result.ok) {
             setQuickSearching(false);
@@ -898,8 +1061,14 @@ function MultiplayerLobby({
     next.on("quick-match-status", (status: string) => setMessage(status));
     next.on(
       "room-state",
-      (room: { players: RoomPlayer[]; started: boolean }) => {
+      (room: {
+        players: RoomPlayer[];
+        started: boolean;
+        challenges?: unknown;
+      }) => {
         setPlayers(room.players);
+        if (room.players.length)
+          setChallenges(normaliseStandardChallenges(room.challenges));
         if (room.players.length === 2) {
           setQuickSearching(false);
           setMessage("Opponent found. Both players can ready up.");
@@ -908,7 +1077,12 @@ function MultiplayerLobby({
           setMessage("Both players are ready. Opening deck building…");
       },
     );
-    next.on("match-ready", () => onStart(next));
+    next.on("match-ready", (data: { room?: { challenges?: unknown } }) =>
+      onStart(
+        next,
+        normaliseStandardChallenges(data?.room?.challenges ?? challenges),
+      ),
+    );
     next.on("connect_error", () => {
       setQuickSearching(false);
       setConnected(false);
@@ -957,6 +1131,11 @@ function MultiplayerLobby({
             Create a private room, then give the room code to one friend. The
             Render server keeps the room and both players connected.
           </p>
+          <StandardChallengePicker
+            selected={challenges}
+            onChange={setChallenges}
+            disabled={inRoom || quickSearching}
+          />
           <div className="setup-grid">
             <label>
               Render server address
@@ -1157,6 +1336,16 @@ export default function Home() {
     [theme, setTheme] = useState("cybertron"),
     [cardBorder, setCardBorder] = useState("energon-edge"),
     [showFilterCounts, setShowFilterCounts] = useState(true);
+  const [standardChallenges, setStandardChallenges] = useState<
+      StandardChallenge[]
+    >([]),
+    [chosenStep, setChosenStep] = useState(0),
+    [chosenPicks, setChosenPicks] = useState<string[]>([]),
+    [chosenChoices, setChosenChoices] = useState<Unit[]>([]),
+    [chosenSpinning, setChosenSpinning] = useState(false),
+    [chosenSpinKey, setChosenSpinKey] = useState(0),
+    [priorityIds, setPriorityIds] = useState<string[]>([]),
+    [enemyPriorityIds, setEnemyPriorityIds] = useState<string[]>([]);
   const [deck, setDeck] = useState<string[]>(
       starterDeck("Autobot").map((x) => x.id),
     ),
@@ -1260,6 +1449,27 @@ export default function Home() {
     localStorage.setItem("hidden-front-card-border", cardBorder);
   }, [cardBorder]);
   useEffect(() => {
+    if (phase !== "chosen") return;
+    const current = chosenClassOrder[chosenStep];
+    if (!current) return;
+    const pool = allUnits.filter(
+      (unit) => unit.role === current.role && !chosenPicks.includes(unit.id),
+    );
+    setChosenSpinning(true);
+    const show = () => setChosenChoices(shuffled(pool).slice(0, 3));
+    show();
+    const reel = window.setInterval(show, 90);
+    const stop = window.setTimeout(() => {
+      window.clearInterval(reel);
+      show();
+      setChosenSpinning(false);
+    }, 950);
+    return () => {
+      window.clearInterval(reel);
+      window.clearTimeout(stop);
+    };
+  }, [phase, chosenStep, chosenSpinKey, chosenPicks]);
+  useEffect(() => {
     if (!turnEndsAt || !["combat", "reinforce", "reposition"].includes(phase))
       return;
     const update = () =>
@@ -1268,6 +1478,39 @@ export default function Home() {
     const timer = window.setInterval(update, 100);
     return () => window.clearInterval(timer);
   }, [turnEndsAt, phase]);
+  useEffect(() => {
+    if (
+      !standardChallenges.includes("high-priority") ||
+      !["combat", "reinforce", "reposition"].includes(phase)
+    )
+      return;
+    const fallen = new Set(scrap.map((unit) => unit.id));
+    const enemyFallen = new Set(enemyScrap.map((unit) => unit.id));
+    if (
+      priorityIds.length === 3 &&
+      priorityIds.every((id) => fallen.has(id))
+    ) {
+      setWinner("Defeat — all three High Priority targets were destroyed.");
+      setPhase("over");
+      setTurnEndsAt(0);
+      setIsMyTurn(false);
+    } else if (
+      enemyPriorityIds.length === 3 &&
+      enemyPriorityIds.every((id) => enemyFallen.has(id))
+    ) {
+      setWinner("Victory — all three enemy High Priority targets were destroyed.");
+      setPhase("over");
+      setTurnEndsAt(0);
+      setIsMyTurn(false);
+    }
+  }, [
+    phase,
+    scrap,
+    enemyScrap,
+    priorityIds,
+    enemyPriorityIds,
+    standardChallenges,
+  ]);
   useEffect(() => {
     if (
       multiplayerSocket &&
@@ -1305,12 +1548,17 @@ export default function Home() {
           }
         : null;
     };
-    const ready = (data: { opponent: string[] }) => {
+    const ready = (data: {
+      opponent: string[];
+      priority?: { own?: string[]; opponent?: string[] };
+    }) => {
       deckAdvancedRef.current = true;
       const roster = data.opponent
         .map(freshUnit)
         .filter((unit): unit is Unit => !!unit);
       setEnemyRoster(roster);
+      setPriorityIds(data.priority?.own || []);
+      setEnemyPriorityIds(data.priority?.opponent || []);
       setPhase("opponent");
       setDeckLocked(false);
       flash("Both decks are locked. The enemy team is now available.", "good");
@@ -1807,7 +2055,33 @@ export default function Home() {
     });
   }
 
-  function prepareOpponent() {
+  function beginChosen() {
+    setChosenStep(0);
+    setChosenPicks([]);
+    setChosenChoices([]);
+    setChosenSpinKey((value) => value + 1);
+    setPriorityIds([]);
+    setEnemyPriorityIds([]);
+    setPhase("chosen");
+  }
+  function selectChosen(unit: Unit) {
+    if (chosenSpinning || chosenPicks.includes(unit.id)) return;
+    const current = chosenClassOrder[chosenStep];
+    if (!current || unit.role !== current.role) return;
+    const next = [...chosenPicks, unit.id];
+    const pickedInClass = next.filter(
+      (id) => allUnits.find((card) => card.id === id)?.role === current.role,
+    ).length;
+    setChosenPicks(next);
+    if (next.length === 9) {
+      setDeck(next);
+      prepareOpponent(next);
+      return;
+    }
+    if (pickedInClass >= current.amount) setChosenStep((value) => value + 1);
+    else setChosenSpinKey((value) => value + 1);
+  }
+  function prepareOpponent(selectedDeck = deck) {
     if (multiplayerSocket) {
       deckAdvancedRef.current = false;
       setDeckLocked(true);
@@ -1816,7 +2090,7 @@ export default function Home() {
         .timeout(8000)
         .emit(
           "submit-deck",
-          deck,
+          selectedDeck,
           (error: Error | null, response?: DeckSubmitResponse) => {
             if (deckAdvancedRef.current) return;
             if (error) {
@@ -1846,11 +2120,13 @@ export default function Home() {
         );
       return;
     }
-    const roster = applyDeckPassives(
-      (enemyFaction === "Random"
+    const enemySelection = standardChallenges.includes("the-chosen")
+      ? randomChosenDeck()
+      : enemyFaction === "Random"
         ? randomEnemyDeck()
-        : enemyDeck(enemyFaction)
-      ).map((unit) => ({
+        : enemyDeck(enemyFaction);
+    const roster = applyDeckPassives(
+      enemySelection.map((unit) => ({
         ...unit,
         hp: unit.max,
         canAttack: unit.id !== "beachcomber",
@@ -1859,6 +2135,17 @@ export default function Home() {
     );
     setEnemyRoster(roster);
     setEnemyScrap([]);
+    if (standardChallenges.includes("high-priority")) {
+      const playerRoster = selectedDeck
+        .map((id) => allUnits.find((unit) => unit.id === id))
+        .filter((unit): unit is Unit => !!unit);
+      const targets = mirroredPriorityTargets(playerRoster, roster);
+      setPriorityIds(targets.player);
+      setEnemyPriorityIds(targets.enemy);
+    } else {
+      setPriorityIds([]);
+      setEnemyPriorityIds([]);
+    }
     setPhase("opponent");
   }
   function beginDeployment() {
@@ -4167,6 +4454,7 @@ export default function Home() {
             log={log}
             enemyRoster={enemyRoster}
             enemyScrap={enemyScrap}
+            enemyPriorityIds={enemyPriorityIds}
           />
         </div>
         {children}
@@ -4271,8 +4559,19 @@ export default function Home() {
             </select>
           </label>
         </div>
+        <StandardChallengePicker
+          selected={standardChallenges}
+          onChange={setStandardChallenges}
+        />
         <div className="lobby-actions">
-          <button className="primary" onClick={() => setPhase("build")}>
+          <button
+            className="primary"
+            onClick={() =>
+              standardChallenges.includes("the-chosen")
+                ? beginChosen()
+                : setPhase("build")
+            }
+          >
             <Zap /> Solo game
           </button>
           <button className="ghost" onClick={() => setPhase("multiplayer")}>
@@ -4285,12 +4584,74 @@ export default function Home() {
     return shell(
       <MultiplayerLobby
         onSolo={() => setPhase("start")}
-        onStart={(socket) => {
+        onStart={(socket, challenges) => {
           setMultiplayerSocket(socket);
-          setPhase("build");
+          setStandardChallenges(challenges);
+          if (challenges.includes("the-chosen")) beginChosen();
+          else setPhase("build");
         }}
       />,
     );
+  if (phase === "chosen") {
+    const current = chosenClassOrder[chosenStep];
+    const currentCount = current
+      ? chosenPicks.filter(
+          (id) => allUnits.find((unit) => unit.id === id)?.role === current.role,
+        ).length
+      : 0;
+    return shell(
+      <section className="chosen-machine" aria-live="polite">
+        <div className="chosen-marquee">
+          <Sparkles />
+          <div>
+            <p className="eyebrow">CHALLENGE MODE</p>
+            <h1>The Chosen</h1>
+          </div>
+          <Sparkles />
+        </div>
+        <p className="chosen-progress">
+          {current?.role || "Complete"} · pick {currentCount + 1} of{" "}
+          {current?.amount || 0} · {chosenPicks.length}/9 selected
+        </p>
+        <div className={`chosen-reels ${chosenSpinning ? "spinning" : ""}`}>
+          {chosenChoices.map((unit) => (
+            <button
+              key={unit.id}
+              disabled={chosenSpinning}
+              onClick={() => selectChosen(unit)}
+            >
+              <span className="reel-window character-border-frame">
+                <img src={unit.image} alt={unit.name} />
+              </span>
+              <b>{chosenSpinning ? "SPINNING…" : unit.name}</b>
+              <small>{unit.role}</small>
+            </button>
+          ))}
+        </div>
+        <div className="chosen-ledger">
+          {chosenClassOrder.map(({ role, amount }) => (
+            <span key={role} className={current?.role === role ? "active" : ""}>
+              {role}{" "}
+              <b>
+                {
+                  chosenPicks.filter(
+                    (id) =>
+                      allUnits.find((unit) => unit.id === id)?.role === role,
+                  ).length
+                }
+                /{amount}
+              </b>
+            </span>
+          ))}
+        </div>
+        <p className="chosen-instruction">
+          {chosenSpinning
+            ? "The reels are searching the character pool…"
+            : "Choose one of the three cards to lock it into your team."}
+        </p>
+      </section>,
+    );
+  }
   if (phase === "waiting")
     return shell(
       <section className="start-card multiplayer-lobby">
@@ -4459,7 +4820,11 @@ export default function Home() {
             Choose your starting six
           </button>
         </div>
-        <EnemyRosterCards units={enemyRoster} defeated={[]} />
+        <EnemyRosterCards
+          units={enemyRoster}
+          defeated={[]}
+          priorityIds={enemyPriorityIds}
+        />
       </section>,
     );
   if (phase === "deploy")
@@ -4489,6 +4854,7 @@ export default function Home() {
               revealed={revealed}
               concealed={[]}
               used={usedAttacks}
+              priorityIds={priorityIds}
               onClick={resolveBoardClick}
               onDrop={onDrop}
               onDrag={onDrag}
@@ -4516,7 +4882,11 @@ export default function Home() {
                   }
                 >
                   <GripVertical />
-                  <CharacterCard unit={u} small />
+                  <CharacterCard
+                    unit={u}
+                    small
+                    highPriority={priorityIds.includes(u.id)}
+                  />
                 </button>
               ))}
             </div>
@@ -4634,6 +5004,7 @@ export default function Home() {
                     : []
                 }
                 used={[]}
+                priorityIds={[]}
                 onClick={resolveEnemyClick}
                 onDrop={onDrop}
                 onDrag={onDrag}
@@ -4663,6 +5034,7 @@ export default function Home() {
                     : []
                 }
                 used={usedAttacks}
+                priorityIds={priorityIds}
                 onClick={resolveBoardClick}
                 onDrop={onDrop}
                 onDrag={onDrag}
@@ -4820,6 +5192,7 @@ export default function Home() {
                       unit={u}
                       hidden={interaction?.kind === "razor"}
                       small
+                      highPriority={priorityIds.includes(u.id)}
                     />
                     {phase === "combat" &&
                       u.id === "galvatron" &&
@@ -4952,6 +5325,7 @@ function Board({
   revealed,
   concealed,
   used,
+  priorityIds,
   onClick,
   onDrop,
   onDrag,
@@ -4964,6 +5338,7 @@ function Board({
   revealed: number[];
   concealed: number[];
   used: string[];
+  priorityIds: string[];
   onClick: (i: number) => void;
   onDrop: (t: DragSource, e: React.DragEvent) => void;
   onDrag: (s: DragSource, e: React.DragEvent) => void;
@@ -4988,7 +5363,11 @@ function Board({
             </div>
           ) : u ? (
             <>
-              <CharacterCard unit={u} used={used.includes(u.id)} />
+              <CharacterCard
+                unit={u}
+                used={used.includes(u.id)}
+                highPriority={priorityIds.includes(u.id)}
+              />
               {traps.includes(i) && (
                 <span className="trap-marker">
                   <Crosshair /> TRAP ARMED

@@ -363,6 +363,87 @@ test("Boss Rush briefs both players, allows simultaneous placement, deals exclus
   }
 });
 
+test("Boss Rush challenge modes combine six-character teams with no Battle Cards", async () => {
+  const port = 3203;
+  const server = spawn(process.execPath, ["server.mjs"], {
+    env: { ...process.env, PORT: String(port), CLIENT_ORIGIN: origin },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  await waitForServer(server);
+  const a = io(`http://127.0.0.1:${port}`, {
+    extraHeaders: { Origin: origin },
+    reconnection: false,
+  });
+  const b = io(`http://127.0.0.1:${port}`, {
+    extraHeaders: { Origin: origin },
+    reconnection: false,
+  });
+  const stateA = tracker(a);
+  try {
+    await Promise.all([
+      new Promise((resolve) => a.once("connect", resolve)),
+      new Promise((resolve) => b.once("connect", resolve)),
+    ]);
+    const challenges = [
+      "no-battle-cards",
+      "six-characters",
+      "enemy-bonus-damage",
+    ];
+    assert.equal(
+      (await emitReply(a, "raid-join", {
+        code: "TRIAL6",
+        name: "Alpha",
+        challenges,
+      })).ok,
+      true,
+    );
+    assert.equal(
+      (await emitReply(b, "raid-join", { code: "TRIAL6", name: "Beta" })).ok,
+      true,
+    );
+    const lobby = await stateA.waitFor((state) => state.players.length === 2);
+    assert.deepEqual(lobby.challengeModes, [...challenges].sort());
+    a.emit("raid-ready");
+    b.emit("raid-ready");
+    await stateA.waitFor((state) => state.stage === "deckbuilding");
+    const nine = starterDeck("Autobot").map((unit) => unit.id);
+    const six = nine.slice(0, 6);
+    assert.equal((await emitReply(a, "raid-submit-deck", nine)).ok, false);
+    assert.equal((await emitReply(a, "raid-submit-deck", six)).ok, true);
+    assert.equal((await emitReply(b, "raid-submit-deck", six)).ok, true);
+    const briefing = await stateA.waitFor((state) => state.stage === "briefing");
+    assert.equal(briefing.battleCards.length, 0);
+    a.emit("raid-briefing-ready");
+    b.emit("raid-briefing-ready");
+    const deployment = await stateA.waitFor((state) => state.stage === "deployment");
+    const ownTeam = deployment.players.find((player) => player.id === a.id).team;
+    assert.equal(ownTeam.pending.length, 6);
+    assert.equal(ownTeam.backups.length, 0);
+    for (let slot = 0; slot < six.length; slot += 1) {
+      assert.equal(
+        (await emitReply(a, "raid-place", { unitId: six[slot], slot })).ok,
+        true,
+      );
+      assert.equal(
+        (await emitReply(b, "raid-place", { unitId: six[slot], slot })).ok,
+        true,
+      );
+    }
+    const combat = await stateA.waitFor((state) => state.stage === "combat");
+    assert.equal(combat.battleHand.length, 0);
+    assert.equal(combat.battleCards.length, 0);
+    const battleReply = await emitReply(a, "raid-play-battle", {
+      name: "Rallying Cry",
+    });
+    assert.equal(battleReply.ok, false);
+    assert.match(battleReply.error, /Battle Cards are disabled by this Boss Rush challenge/);
+  } finally {
+    a.disconnect();
+    b.disconnect();
+    server.kill("SIGTERM");
+  }
+});
+
 test("Lio Convoy uses the repaired uploaded card in both asset roots", () => {
   const publicAsset = readFileSync(new URL("../public/cards/characters/lio-convoy.png", import.meta.url));
   const pagesAsset = readFileSync(new URL("../cards/characters/lio-convoy.png", import.meta.url));

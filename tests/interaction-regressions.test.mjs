@@ -107,6 +107,41 @@ test("the nine-card expansion adds its foundry theme and carapace frame", () => 
   assert.match(css, /data-card-border="insecticon-carapace-frame"/);
 });
 
+test("Boss Rush challenges add a proving-ground theme and trial frame", () => {
+  assert.match(page, /\["proving-ground", "Cybertron Proving Ground"\]/);
+  assert.match(css, /html\[data-theme="proving-ground"\]/);
+  assert.match(page, /\["trial-circuit-frame", "Trial Circuit Frame"\]/);
+  assert.match(css, /data-card-border="trial-circuit-frame"/);
+  assert.match(raidPage, /Mix and match any combination/);
+  assert.match(raidPage, /No Battle Cards/);
+  assert.match(raidPage, /Only 6 Characters/);
+  assert.match(raidPage, /Enemy Bonus Damage/);
+  assert.match(server, /attacker\.id === room\.judge\.id \? 15 : 10/);
+});
+
+test("solo and multiplayer support stackable High Priority and The Chosen challenges", () => {
+  assert.match(page, /id: "high-priority"/);
+  assert.match(page, /id: "the-chosen"/);
+  assert.match(page, /Mix and match/);
+  assert.match(page, /chosenClassOrder/);
+  assert.match(page, /Commander", amount: 2/);
+  assert.match(page, /Tactician", amount: 2/);
+  assert.match(page, /Trooper", amount: 2/);
+  assert.match(page, /Scout", amount: 3/);
+  assert.match(page, /chosen-reels/);
+  assert.match(page, /all three High Priority targets were destroyed/);
+  assert.match(server, /buildPriorityTargets/);
+  assert.match(server, /priorityTargets/);
+});
+
+test("slot challenge update adds Iacon Jackpot and Triple-Reel Frame", () => {
+  assert.match(page, /\["iacon-jackpot", "Iacon Jackpot"\]/);
+  assert.match(css, /html\[data-theme="iacon-jackpot"\]/);
+  assert.match(page, /\["triple-reel-frame", "Triple-Reel Frame"\]/);
+  assert.match(css, /data-card-border="triple-reel-frame"/);
+  assert.match(css, /@keyframes reel-spin/);
+});
+
 test("combat history is unlimited while its badge caps at 99+", () => {
   assert.doesNotMatch(page, /\.slice\(0,100\)/);
   assert.match(page, /log\.length > 99 \? "99\+" : log\.length/);

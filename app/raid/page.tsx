@@ -60,6 +60,7 @@ type RaidState = {
   code: string;
   encounterId: "quintesson" | "unicron";
   encounterName: string;
+  challengeModes: RaidChallengeId[];
   bossColumns: number;
   bossRows: number;
   stage: RaidStage;
@@ -105,6 +106,32 @@ type RaidInspectable = {
   image?: string;
   ability?: string;
 };
+
+type RaidChallengeId =
+  | "no-battle-cards"
+  | "six-characters"
+  | "enemy-bonus-damage";
+const raidChallenges: Array<{
+  id: RaidChallengeId;
+  name: string;
+  description: string;
+}> = [
+  {
+    id: "no-battle-cards",
+    name: "No Battle Cards",
+    description: "The shared Battle Card deck and all card draws are disabled.",
+  },
+  {
+    id: "six-characters",
+    name: "Only 6 Characters",
+    description: "Each team uses six characters and receives no Backups.",
+  },
+  {
+    id: "enemy-bonus-damage",
+    name: "Enemy Bonus Damage",
+    description: "Bosses deal +15 damage and enemy troops deal +10.",
+  },
+];
 
 const raidServer = "https://hidden-front-server.onrender.com";
 
@@ -159,6 +186,9 @@ export default function RaidPage() {
   const [selectedBoss, setSelectedBoss] = useState<"quintesson" | "unicron">(
     "quintesson",
   );
+  const [selectedChallenges, setSelectedChallenges] = useState<
+    RaidChallengeId[]
+  >([]);
 
   useEffect(() => {
     const boss = new URLSearchParams(window.location.search).get("boss");
@@ -222,6 +252,10 @@ export default function RaidPage() {
     state?.stage === "deployment" && Boolean(me?.team?.pending?.length);
   const moving =
     state?.stage === "reposition" && (state.repositions[state.youId] || 0) > 0;
+  const challengeModes = state?.challengeModes || selectedChallenges;
+  const sixCharacterChallenge = challengeModes.includes("six-characters");
+  const noBattleCardsChallenge = challengeModes.includes("no-battle-cards");
+  const raidDeckSize = sixCharacterChallenge ? 6 : 9;
   const counts = useMemo(
     () =>
       Object.fromEntries(
@@ -232,12 +266,13 @@ export default function RaidPage() {
       ),
     [deck],
   );
-  const legal =
-    deck.length === 9 &&
-    counts.Commander === 2 &&
-    counts.Scout === 3 &&
-    counts.Trooper === 2 &&
-    counts.Tactician === 2;
+  const legal = sixCharacterChallenge
+    ? deck.length === 6
+    : deck.length === 9 &&
+      counts.Commander === 2 &&
+      counts.Scout === 3 &&
+      counts.Trooper === 2 &&
+      counts.Tactician === 2;
   const filteredUnits = allUnits.filter(
     (unit) =>
       (roleFilter === "All" || unit.role === roleFilter) &&
@@ -277,7 +312,7 @@ export default function RaidPage() {
     next.on("connect", () =>
       next.emit(
         "raid-join",
-        { name, code, boss: selectedBoss },
+        { name, code, boss: selectedBoss, challenges: selectedChallenges },
         (reply: RaidReply) =>
           setMessage(
             reply.ok
@@ -300,7 +335,7 @@ export default function RaidPage() {
     setDeck((current) =>
       current.some((entry) => entry.id === unit.id)
         ? current.filter((entry) => entry.id !== unit.id)
-        : current.length < 9
+        : current.length < raidDeckSize
           ? [...current, unit]
           : current,
     );
@@ -558,6 +593,33 @@ export default function RaidPage() {
               Unicron
             </button>
           </div>
+          <fieldset className="raid-challenge-picker">
+            <legend>
+              Challenge modes <span>Mix and match any combination</span>
+            </legend>
+            {raidChallenges.map((challenge) => {
+              const enabled = selectedChallenges.includes(challenge.id);
+              return (
+                <button
+                  type="button"
+                  key={challenge.id}
+                  className={enabled ? "active" : ""}
+                  aria-pressed={enabled}
+                  onClick={() =>
+                    setSelectedChallenges((current) =>
+                      enabled
+                        ? current.filter((id) => id !== challenge.id)
+                        : [...current, challenge.id],
+                    )
+                  }
+                >
+                  <span aria-hidden="true">{enabled ? "✓" : "+"}</span>
+                  <b>{challenge.name}</b>
+                  <small>{challenge.description}</small>
+                </button>
+              );
+            })}
+          </fieldset>
           <div className="raid-rules-callout">
             <b>Round order</b>
             <span>Simultaneous placement</span>
@@ -606,6 +668,10 @@ export default function RaidPage() {
             Both players use the same room code. Your cards remain yours: you
             cannot move or attack with your ally’s characters.
           </p>
+          <p className="raid-message">
+            The first player to create a room locks its challenge combination.
+            The second player inherits those settings by joining the same code.
+          </p>
           <p className="raid-message">{message}</p>
         </section>
       </main>
@@ -617,6 +683,17 @@ export default function RaidPage() {
         <section className="raid-lobby">
           <p className="eyebrow">BOSS RUSH ROOM {state.code}</p>
           <h1>Assemble the strike team</h1>
+          {state.challengeModes.length ? (
+            <div className="raid-active-challenges">
+              {raidChallenges
+                .filter((challenge) =>
+                  state.challengeModes.includes(challenge.id),
+                )
+                .map((challenge) => (
+                  <span key={challenge.id}>{challenge.name}</span>
+                ))}
+            </div>
+          ) : null}
           <div className="raid-players">
             {state.players.map((player) => (
               <div key={player.id}>
@@ -649,9 +726,15 @@ export default function RaidPage() {
         <header className="raid-header">
           <div>
             <p className="eyebrow">BOSS RUSH DECKBUILDER</p>
-            <h1>Choose and order your nine</h1>
+            <h1>
+              {sixCharacterChallenge
+                ? "Choose your six"
+                : "Choose and order your nine"}
+            </h1>
           </div>
-          <b className={legal ? "legal" : ""}>{deck.length}/9</b>
+          <b className={legal ? "legal" : ""}>
+            {deck.length}/{raidDeckSize}
+          </b>
           <button
             className="primary"
             disabled={!legal || locked}
@@ -660,25 +743,40 @@ export default function RaidPage() {
             {locked ? "Waiting for ally" : "Lock Raid team"}
           </button>
         </header>
-        <div className="raid-counts">
-          <span className={counts.Commander === 2 ? "ok" : ""}>
-            2 Commanders · {counts.Commander}
-          </span>
-          <span className={counts.Scout === 3 ? "ok" : ""}>
-            3 Scouts · {counts.Scout}
-          </span>
-          <span className={counts.Trooper === 2 ? "ok" : ""}>
-            2 Troopers · {counts.Trooper}
-          </span>
-          <span className={counts.Tactician === 2 ? "ok" : ""}>
-            2 Tacticians · {counts.Tactician}
-          </span>
-        </div>
+        {state.challengeModes.length ? (
+          <div className="raid-active-challenges raid-active-challenges-wide">
+            <b>ACTIVE CHALLENGES</b>
+            {raidChallenges
+              .filter((challenge) =>
+                state.challengeModes.includes(challenge.id),
+              )
+              .map((challenge) => (
+                <span key={challenge.id}>{challenge.name}</span>
+              ))}
+          </div>
+        ) : null}
+        {sixCharacterChallenge ? (
+          <div className="raid-challenge-deck-note">
+            <b>ONLY 6 CHARACTERS</b>
+            <span>
+              Choose any six unique characters. All six deploy and there are no
+              Backups.
+            </span>
+          </div>
+        ) : (
+          <div className="raid-counts">
+            <span className={counts.Commander === 2 ? "ok" : ""}>2 Commanders · {counts.Commander}</span>
+            <span className={counts.Scout === 3 ? "ok" : ""}>3 Scouts · {counts.Scout}</span>
+            <span className={counts.Trooper === 2 ? "ok" : ""}>2 Troopers · {counts.Trooper}</span>
+            <span className={counts.Tactician === 2 ? "ok" : ""}>2 Tacticians · {counts.Tactician}</span>
+          </div>
+        )}
         <section className="raid-loadout">
           <h2>Deployment order</h2>
           <p>
-            The first six become your deployable characters. Cards 7–9 stay as
-            your hidden Backups.
+            {sixCharacterChallenge
+              ? "All six characters deploy. This challenge gives you no Backup cards."
+              : "The first six become your deployable characters. Cards 7–9 stay as your hidden Backups."}
           </p>
           <div>
             {deck.map((unit, index) => (
@@ -753,7 +851,7 @@ export default function RaidPage() {
             )}
           </div>
           <p>
-            {filteredUnits.length} cards shown · {deck.length}/9 selected
+            {filteredUnits.length} cards shown · {deck.length}/{raidDeckSize} selected
           </p>
         </section>
         <section className="raid-card-pool">
@@ -820,6 +918,18 @@ export default function RaidPage() {
             {state.judge.dmg} DMG
           </strong>
         </section>
+        {state.challengeModes.length ? (
+          <div className="raid-active-challenges raid-active-challenges-wide">
+            <b>ACTIVE CHALLENGES</b>
+            {raidChallenges
+              .filter((challenge) =>
+                state.challengeModes.includes(challenge.id),
+              )
+              .map((challenge) => (
+                <span key={challenge.id}>{challenge.name}</span>
+              ))}
+          </div>
+        ) : null}
         <section
           className={`raid-briefing-roster ${state.encounterId === "unicron" ? "unicron-briefing-roster" : ""}`}
           aria-label={`${state.encounterName} boss and support cards`}
@@ -1003,8 +1113,9 @@ export default function RaidPage() {
     (player) => player.id === state.activeId,
   )?.name;
   const battleCardsLocked =
-    state.encounterId === "unicron" &&
-    state.bossBoard.some((unit) => unit?.id === "the-fallen");
+    noBattleCardsChallenge ||
+    (state.encounterId === "unicron" &&
+      state.bossBoard.some((unit) => unit?.id === "the-fallen"));
   const availableAbilities = [
     ...(me?.team?.board.filter((unit): unit is Unit =>
       Boolean(unit && raidActiveAbilities.has(unit.id)),
@@ -1067,6 +1178,18 @@ export default function RaidPage() {
           </Link>
         ) : null}
       </header>
+      {state.challengeModes.length ? (
+        <div className="raid-active-challenges raid-active-challenges-wide">
+          <b>ACTIVE CHALLENGES</b>
+          {raidChallenges
+            .filter((challenge) =>
+              state.challengeModes.includes(challenge.id),
+            )
+            .map((challenge) => (
+              <span key={challenge.id}>{challenge.name}</span>
+            ))}
+        </div>
+      ) : null}
       <section className="raid-action-console" aria-label="Boss Rush actions">
         <div className="raid-ability-controls">
           <div className="raid-console-heading">
@@ -1118,7 +1241,9 @@ export default function RaidPage() {
               <h2>Battle Cards</h2>
             </div>
             <span>
-              {battleCardsLocked
+              {noBattleCardsChallenge
+                ? "DISABLED BY CHALLENGE"
+                : battleCardsLocked
                 ? "DISABLED BY THE FALLEN"
                 : state.battlePlayed
                   ? "CARD PLAYED THIS ROUND"
@@ -1126,6 +1251,12 @@ export default function RaidPage() {
             </span>
           </div>
           <div className="raid-battle-hand">
+            {noBattleCardsChallenge ? (
+              <p className="raid-console-empty raid-challenge-empty">
+                No Battle Cards challenge active. The shared deck and all card
+                draws are disabled.
+              </p>
+            ) : null}
             {state.battleHand.map((name, index) => {
               const card = state.battleCards.find(
                 (entry) => entry.name === name,

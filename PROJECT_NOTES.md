@@ -19,6 +19,8 @@ Theme history:
 - Settings and modal update: Nemesis Flight Deck, a dark purple warship theme with green flight-line accents, and Metroplex Grid, a teal city-grid theme with orange structural lighting.
 - Character-border update: Vector Sigma Vault, an ancient emerald-and-gold data chamber with luminous circuit geometry.
 
+- Solo and multiplayer challenge update: Iacon Jackpot, a ruby-and-gold arcade hall with marquee bulbs, cool chrome reel light and a dedicated animated selection console.
+
 Character Card border history:
 
 - Initial border collection: Energon Edge, Matrix Relic, Decepticon Alloy, Beast Wars Claw and Cybertron Neon.
@@ -58,3 +60,6 @@ Character Card border history:
 - Seventeen-character roster update: Seeker Contrail Frame, a swept-wing cyan frame with amber exhaust cuts, tapered flight rails and an asymmetrical airborne silhouette.
 - Unicron Boss Rush update: Planet Maw Frame, a horned black-violet frame curved around a molten orange core with irregular planetary armor cuts.
 - Nine-character Decepticon expansion: Insecticon Carapace Frame, a segmented black-bronze mandible border with toxic-green energon nodes and an angular chitin silhouette.
+- Boss challenge update: Cybertron Proving Ground, a stark black testing arena with white calibration lines, electric-yellow hazard bands and cyan scoring lights.
+- Boss challenge update: Trial Circuit Frame, an asymmetric black-metal border with interrupted yellow rails, cyan checkpoint nodes and clipped test-chamber corners.
+- Solo and multiplayer challenge update: Triple-Reel Frame, a rounded gold-arch Character Card border with ruby side rails and three luminous reel-window lamps.
