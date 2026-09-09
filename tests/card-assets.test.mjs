@@ -114,6 +114,21 @@ test("the sixteen-card expansion is mirrored into the GitHub Pages root", () => 
     );
 });
 
+test("the Unicron encounter cards are mirrored into the GitHub Pages root", () => {
+  for (const name of [
+    "unicron-phase-1",
+    "unicron-phase-2",
+    "unicron-phase-3",
+    "the-fallen",
+    "sideways-unicron",
+    "rodimus-unicronus",
+   ])
+    assert.deepEqual(
+      readAsset(`/public/cards/characters/${name}.png`),
+      readAsset(`/cards/characters/${name}.png`),
+    );
+});
+
 test("the seventeen-card expansion is mirrored into the GitHub Pages root", () => {
   for (const name of [
     "air-raid",

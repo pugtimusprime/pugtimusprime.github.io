@@ -205,6 +205,7 @@ const themes = [
   ["vector-sigma-dawn", "Vector Sigma Dawn"],
   ["terrorcon-crucible", "Terrorcon Crucible"],
   ["aerialbot-skyforge", "Aerialbot Skyforge"],
+  ["chaos-bringer-singularity", "Chaos-Bringer Singularity"],
 ] as const;
 const cardBorders = [
   ["energon-edge", "Energon Edge"],
@@ -228,6 +229,7 @@ const cardBorders = [
   ["spark-forge-frame", "Spark Forge Frame"],
   ["mammoth-tusk-frame", "Mammoth Tusk Frame"],
   ["seeker-contrail-frame", "Seeker Contrail Frame"],
+  ["planet-maw-frame", "Planet Maw Frame"],
 ] as const;
 const activeAbilities = new Set([
   "eject",
@@ -1019,6 +1021,16 @@ function MultiplayerLobby({
               </small>
             </span>
             <strong>ENTER RAID</strong>
+          </Link>
+          <Link className="boss-rush-entry unicron-entry" href="/raid?boss=unicron">
+            <Skull size={30} />
+            <span>
+              <b>Unicron Raid</b>
+              <small>
+                Two players against the three-phase Chaos Bringer and his visible legion.
+              </small>
+            </span>
+            <strong>FACE UNICRON</strong>
           </Link>
         </section>
       )}

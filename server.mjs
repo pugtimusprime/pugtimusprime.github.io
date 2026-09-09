@@ -36,7 +36,7 @@ app.get("/health", (_request, response) =>
     rooms: rooms.size,
     raidRooms: raidRooms.size,
     quickMatchWaiting: quickMatchQueue.length,
-    version: 7,
+    version: 8,
   }),
 );
 
@@ -91,6 +91,69 @@ const raidTemplates = {
     image: "/cards/characters/allicon.png",
     ability: "Gain +5 damage for every other Allicon alive, up to +10.",
   },
+  unicronPhase1: {
+    id: "unicron",
+    name: "Unicron",
+    role: "Leader",
+    max: 1400,
+    hp: 1400,
+    dmg: 20,
+    phase: 1,
+    image: "/cards/characters/unicron-phase-1.png",
+    ability: "Every third boss turn, Unicron devours one random deployed character.",
+  },
+  unicronPhase2: {
+    id: "unicron",
+    name: "Unicron",
+    role: "Leader",
+    max: 1400,
+    hp: 999,
+    dmg: 30,
+    phase: 2,
+    image: "/cards/characters/unicron-phase-2.png",
+    ability: "Characters defeated by Unicron return as soldiers in his three-space legion row.",
+  },
+  unicronPhase3: {
+    id: "unicron",
+    name: "Unicron",
+    role: "Leader",
+    max: 1400,
+    hp: 399,
+    dmg: 35,
+    phase: 3,
+    image: "/cards/characters/unicron-phase-3.png",
+    ability: "Summon The Fallen, Sideways and Rodimus Unicronus. Unicron cannot attack or take damage until all three are defeated.",
+  },
+  fallen: {
+    id: "the-fallen",
+    name: "The Fallen",
+    role: "Commander",
+    max: 80,
+    hp: 80,
+    dmg: 20,
+    image: "/cards/characters/the-fallen.png",
+    ability: "All Battle Cards are rendered useless until The Fallen is defeated.",
+  },
+  sideways: {
+    id: "sideways-unicron",
+    name: "Sideways",
+    role: "Commander",
+    max: 80,
+    hp: 80,
+    dmg: 20,
+    image: "/cards/characters/sideways-unicron.png",
+    ability: "At the start of every boss turn, heal The Fallen for 15 Health.",
+  },
+  rodimusUnicronus: {
+    id: "rodimus-unicronus",
+    name: "Rodimus Unicronus",
+    role: "Commander",
+    max: 80,
+    hp: 80,
+    dmg: 20,
+    image: "/cards/characters/rodimus-unicronus.png",
+    ability: "While this card is alive, The Fallen deals 15 additional damage.",
+  },
 };
 const raidCharacterById = new Map(allUnits.map((unit) => [unit.id, unit]));
 function freshRaidUnit(unit) {
@@ -106,9 +169,13 @@ function legalRaidDeck(ids) {
   return roles.Commander === 2 && roles.Scout === 3 && roles.Trooper === 2 && roles.Tactician === 2 ? units : null;
 }
 
-function createRaidRoom(code) {
+function createRaidRoom(code, requestedBoss = "quintesson") {
+  const encounterId = requestedBoss === "unicron" ? "unicron" : "quintesson";
+  const unicron = encounterId === "unicron";
   return {
     code,
+    encounterId,
+    encounterName: unicron ? "Unicron" : "Quintesson Judge",
     players: new Map(),
     stage: "lobby",
     round: 0,
@@ -120,12 +187,12 @@ function createRaidRoom(code) {
     turnOrder: [],
     turnIndex: 0,
     actions: 3,
-    judge: { ...raidTemplates.judge },
-    bossBoard: [{ ...raidTemplates.bailiff }, { ...raidTemplates.prosecutor }, { ...raidTemplates.executor }, null, null, null],
+    judge: { ...(unicron ? raidTemplates.unicronPhase1 : raidTemplates.judge) },
+    bossBoard: unicron ? Array(3).fill(null) : [{ ...raidTemplates.bailiff }, { ...raidTemplates.prosecutor }, { ...raidTemplates.executor }, null, null, null],
     fallen: [],
     enemyDefeatPending: false,
     alliconSerial: 0,
-    log: ["The Quintesson Tribunal awaits judgement."],
+    log: [unicron ? "Unicron approaches. The Chaos Bringer has three phases." : "The Quintesson Tribunal awaits judgement."],
     battleDeck: makeBossRushBattleDeck(),
     battleHand: [],
     battlePlayed: false,
@@ -143,6 +210,7 @@ function createRaidRoom(code) {
     revealedBossSlots: new Set(),
     bossTacticianDisabledUntil: 0,
     repositionBlockedUntil: 0,
+    unicronPhaseThreeSummoned: false,
   };
 }
 function bossTroops(room) {
@@ -154,6 +222,7 @@ function bossUnits(room) {
 function publicBossBoard(room) {
   return room.bossBoard.map((unit, slot) => {
     if (!unit) return null;
+    if (room.encounterId === "unicron") return { ...unit, slot, hidden: false, occupied: true };
     return room.revealedBossSlots.has(slot) ? { ...unit, slot, hidden: false, occupied: true } : { slot, hidden: true, occupied: true };
   });
 }
@@ -180,8 +249,14 @@ function publicRaidTeam(team, ownerId, viewerId) {
   };
 }
 function raidPublic(room, viewer) {
+  const unicron = room.encounterId === "unicron";
   return {
     code: room.code,
+    encounterId: room.encounterId,
+    encounterName: room.encounterName,
+    bossColumns: unicron ? 3 : 3,
+    bossRows: unicron ? 1 : 2,
+    bossCardsVisible: unicron,
     stage: room.stage,
     round: room.round,
     youId: viewer,
@@ -202,7 +277,9 @@ function raidPublic(room, viewer) {
     battleCards: bossRushBattleCards,
     battlePlayed: room.battlePlayed,
     briefingReady: room.briefingReady.has(viewer),
-    bossRoster: [raidTemplates.judge, raidTemplates.bailiff, raidTemplates.prosecutor, raidTemplates.executor, raidTemplates.allicon],
+    bossRoster: unicron
+      ? [raidTemplates.unicronPhase1, raidTemplates.unicronPhase2, raidTemplates.unicronPhase3, raidTemplates.fallen, raidTemplates.sideways, raidTemplates.rodimusUnicronus]
+      : [raidTemplates.judge, raidTemplates.bailiff, raidTemplates.prosecutor, raidTemplates.executor, raidTemplates.allicon],
     log: room.log.slice(-30),
     eventSeq: room.eventSeq,
   };
@@ -377,6 +454,7 @@ function moveBossMinimax(room) {
   raidEvent(room, { kind: "reposition", side: "boss" });
 }
 function summonOrRevive(room) {
+  if (room.encounterId !== "quintesson") return;
   const empty = room.bossBoard.findIndex((unit) => !unit);
   if (empty < 0) return;
   const fallen = room.fallen.shift();
@@ -395,6 +473,41 @@ function summonOrRevive(room) {
     };
     room.log.push("The Judge placed a hidden Allicon on the court.");
     raidEvent(room, { kind: "summon", slot: empty, side: "boss" });
+  }
+}
+function summonCorruptedSoldier(room, defeated) {
+  if (room.encounterId !== "unicron" || room.judge.phase !== 2) return;
+  const slot = room.bossBoard.findIndex((unit) => !unit);
+  if (slot < 0) return;
+  room.bossBoard[slot] = {
+    ...structuredClone(defeated),
+    id: `corrupted-${defeated.id}-${room.round}-${slot}`,
+    name: `${defeated.name} — Corrupted`,
+    hp: defeated.max,
+    ability: "Defeated by Unicron and returned as a soldier of the Chaos Bringer.",
+  };
+  room.revealedBossSlots.add(slot);
+  room.log.push(`${defeated.name} returned at full Health as Unicron's soldier.`);
+  raidEvent(room, { kind: "summon", slot, side: "boss" });
+}
+function updateUnicronPhase(room) {
+  if (room.encounterId !== "unicron" || room.judge.hp <= 0) return;
+  const next = room.judge.hp >= 1000 ? raidTemplates.unicronPhase1 : room.judge.hp >= 400 ? raidTemplates.unicronPhase2 : raidTemplates.unicronPhase3;
+  if (room.judge.phase === next.phase) return;
+  const hp = room.judge.hp;
+  room.judge = { ...room.judge, ...next, hp, max: 1400 };
+  room.log.push(`Unicron entered Phase ${next.phase}. ${next.ability}`);
+  raidEvent(room, { kind: "phase", name: `Unicron Phase ${next.phase}`, side: "boss" });
+  if (next.phase === 3 && !room.unicronPhaseThreeSummoned) {
+    room.unicronPhaseThreeSummoned = true;
+    room.bossBoard = [
+      { ...raidTemplates.fallen },
+      { ...raidTemplates.sideways },
+      { ...raidTemplates.rodimusUnicronus },
+    ];
+    room.revealedBossSlots = new Set([0, 1, 2]);
+    room.fallen = [];
+    room.log.push("The Fallen, Sideways and Rodimus Unicronus entered the legion row.");
   }
 }
 function reinforceRaidTeam(room, team, slot) {
@@ -419,6 +532,28 @@ function raidBossTurn(room) {
   room.stage = "boss";
   emitRaid(room);
   summonOrRevive(room);
+  if (room.encounterId === "unicron" && room.judge.phase === 3) {
+    const fallen = bossTroops(room).find((unit) => unit.id === "the-fallen" && unit.hp > 0);
+    const sideways = bossTroops(room).find((unit) => unit.id === "sideways-unicron" && unit.hp > 0 && (unit.raidAbilityDisabledUntil || 0) < room.round);
+    if (fallen && sideways) {
+      fallen.hp = Math.min(fallen.max, fallen.hp + 15);
+      room.log.push("Sideways restored 15 Health to The Fallen.");
+    }
+  }
+  if (room.encounterId === "unicron" && room.judge.phase === 1 && room.round % 3 === 0) {
+    const victims = raidTargetCandidates(room);
+    const devoured = victims[Math.floor(Math.random() * victims.length)];
+    if (devoured) {
+      const team = room.teams.get(devoured.playerId);
+      devoured.unit.hp = 0;
+      team.board[devoured.slot] = null;
+      team.fallen = [...(team.fallen || []), devoured.unit];
+      room.log.push(`Unicron devoured ${devoured.unit.name}.`);
+      raidEvent(room, { kind: "hit", attackerId: room.judge.id, targetId: devoured.unit.id, damage: devoured.unit.max, side: "boss", defeated: true });
+      raidEvent(room, { kind: "player-defeat", defeatedName: devoured.unit.name, side: "boss" });
+      reinforceRaidTeam(room, team, devoured.slot);
+    }
+  }
   for (let slot = 0; slot < room.bossBoard.length; slot++) {
     const poisoned = room.bossBoard[slot];
     if (!poisoned?.raidPoison) continue;
@@ -432,6 +567,7 @@ function raidBossTurn(room) {
   room.markedTarget = marked ? { playerId: marked.playerId, slot: marked.slot } : null;
   if (marked) room.log.push("The Prosecutor marked a concealed player position for judgement.");
   for (const attacker of bossUnits(room).filter((unit) => unit.hp > 0)) {
+    if (room.encounterId === "unicron" && attacker.id === "unicron" && room.judge.phase === 3 && bossTroops(room).some((unit) => unit.hp > 0)) continue;
     if (attacker.raidSuppressedUntil >= room.round) continue;
     if (attacker.role === "Tactician" && room.bossTacticianDisabledUntil >= room.round) continue;
     const live = raidTargetCandidates(room, true);
@@ -455,6 +591,7 @@ function raidBossTurn(room) {
       continue;
     }
     let damage = attacker.dmg + room.bossDamageBonus;
+    if (attacker.id === "the-fallen" && bossTroops(room).some((unit) => unit.id === "rodimus-unicronus" && unit.hp > 0 && (unit.raidAbilityDisabledUntil || 0) < room.round)) damage += 15;
     if (room.markedTarget && room.markedTarget.playerId === chosen.playerId && room.markedTarget.slot === chosen.slot) {
       damage += 10;
       room.markedTarget = null;
@@ -500,7 +637,7 @@ function raidBossTurn(room) {
       intel.occupied.delete(chosen.slot);
       room.log.push("Mirage disguised the successful hit as an empty-space miss.");
     } else recordBossIntel(room, chosen);
-    const attackerName = attacker.id === "quintesson-judge" ? attacker.name : "A hidden Quintesson troop";
+    const attackerName = room.encounterId === "unicron" ? attacker.name : attacker.id === "quintesson-judge" ? attacker.name : "A hidden Quintesson troop";
     room.log.push(`${attackerName} struck ${chosen.unit.name} for ${damage}.`);
     raidEvent(room, {
       kind: "hit",
@@ -524,6 +661,7 @@ function raidBossTurn(room) {
         room.log.push("Blades fell beside Brawn; the shared Battle Card hand was scrapped.");
       }
       reinforceRaidTeam(room, team, chosen.slot);
+      if (attacker.id === "unicron") summonCorruptedSoldier(room, chosen.unit);
       raidEvent(room, {
         kind: "player-defeat",
         defeatedName: chosen.unit.name,
@@ -541,7 +679,10 @@ function raidBossTurn(room) {
     emitRaid(room);
     return;
   }
-  if (room.repositionBlockedUntil === room.round) {
+  if (room.encounterId === "unicron") {
+    room.revealedBossSlots = new Set(room.bossBoard.map((unit, slot) => (unit?.hp > 0 ? slot : -1)).filter((slot) => slot >= 0));
+    room.courtFeedback.clear();
+  } else if (room.repositionBlockedUntil === room.round) {
     room.log.push("Rattrap prevented the Quintesson court from repositioning.");
     revealRandomBossTroop(room);
   } else moveBossMinimax(room);
@@ -671,9 +812,19 @@ function raidAttackDamage(room, team, attacker, slot) {
   return damage;
 }
 function resolveBossDamage(room, target, damage) {
+  if (
+    room.encounterId === "unicron" &&
+    target.unit.id === "unicron" &&
+    room.judge.phase === 3 &&
+    bossTroops(room).some((unit) => unit.hp > 0)
+  ) {
+    room.log.push("Unicron ignored the attack while his Phase 3 legion remains alive.");
+    return 0;
+  }
   const bailiffProtects = !room.breakDefences && target.unit.id === room.judge.id && bossTroops(room).some((unit) => unit.id === "quintesson-bailiff" && unit.hp > 0 && (unit.raidAbilityDisabledUntil || 0) < room.round);
   const adjusted = bailiffProtects ? Math.ceil(damage / 2) : damage;
   target.unit.hp = Math.max(0, target.unit.hp - adjusted);
+  updateUnicronPhase(room);
   return adjusted;
 }
 function bossTargetKey(room, target) {
@@ -861,15 +1012,18 @@ function playBossRushCard(room, playerId, name, targetId, targetSlot) {
   return { ok: true, effect };
 }
 function defeatRaidBossUnit(room, target) {
-  if (target.unit.id === "quintesson-judge") {
+  if (target.unit.id === room.judge.id) {
     room.stage = "victory";
-    room.log.push("The Quintesson Judge has fallen. Raid victory!");
+    room.log.push(`${room.judge.name} has fallen. Raid victory!`);
     return;
   }
   room.bossBoard[target.slot] = null;
   room.fallen.push(target.unit);
   room.enemyDefeatPending = true;
   room.revealedBossSlots.delete(target.slot);
+  if (room.encounterId === "unicron" && room.judge.phase === 3 && !bossTroops(room).some((unit) => unit.hp > 0)) {
+    room.log.push("The Phase 3 legion is destroyed. Unicron can attack and take damage again.");
+  }
 }
 function detachRaid(socket) {
   const code = socket.data.raidCode;
@@ -1142,7 +1296,7 @@ io.on("connection", (socket) => {
   const pendingRaid = pendingRaidDisconnects.get(socket.id);
   if (pendingRaid) clearTimeout(pendingRaid.timer);
   pendingRaidDisconnects.delete(socket.id);
-  socket.emit("server-ready", { version: 7, recovered: socket.recovered });
+  socket.emit("server-ready", { version: 8, recovered: socket.recovered });
 
   socket.on("quick-match", (payload = {}, reply = () => {}) => {
     const name = clean(payload.name, 20) || "Player";
@@ -1166,7 +1320,8 @@ io.on("connection", (socket) => {
 
   socket.on("raid-join", (payload = {}, reply = () => {}) => {
     const code = clean(payload.code, 12).toUpperCase(),
-      name = clean(payload.name, 20) || "Player";
+      name = clean(payload.name, 20) || "Player",
+      boss = payload.boss === "unicron" ? "unicron" : "quintesson";
     if (code.length < 3)
       return reply({
         ok: false,
@@ -1184,9 +1339,14 @@ io.on("connection", (socket) => {
     detachRaid(socket);
     let room = raidRooms.get(code);
     if (!room) {
-      room = createRaidRoom(code);
+      room = createRaidRoom(code, boss);
       raidRooms.set(code, room);
     }
+    if (room.encounterId !== boss)
+      return reply({
+        ok: false,
+        error: `That room is already assigned to the ${room.encounterName} Boss Rush.`,
+      });
     if (room.players.size >= 2 && !room.players.has(socket.id))
       return reply({
         ok: false,
@@ -1371,6 +1531,8 @@ io.on("connection", (socket) => {
         ok: false,
         error: "Only one shared Battle Card can be played during an active player turn.",
       });
+    if (room.encounterId === "unicron" && bossTroops(room).some((unit) => unit.id === "the-fallen" && unit.hp > 0))
+      return reply({ ok: false, error: "The Fallen renders all Battle Cards useless until he is defeated." });
     const cardIndex = room.battleHand.indexOf(name);
     if (cardIndex < 0)
       return reply({

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { io } from "socket.io-client";
 import { bossRushBattleCards, starterDeck } from "../lib/card-data.ts";
-import { QUINTESSON_RAID } from "../lib/raid-data.ts";
+import { QUINTESSON_RAID, UNICRON_RAID } from "../lib/raid-data.ts";
 
 const origin = "https://pugtimusprime.github.io";
 
@@ -110,6 +110,51 @@ test("the Quintesson court has the approved Boss Rush board, stats and wording",
   }
 });
 
+test("Unicron has three health-driven phases and a visible three-card legion", () => {
+  assert.deepEqual(UNICRON_RAID.board, {
+    playerBoards: 2,
+    playerColumns: 3,
+    playerRows: 3,
+    bossColumns: 3,
+    bossRows: 1,
+  });
+  assert.deepEqual(UNICRON_RAID.phases.map(({ phase, minHp, maxHp, dmg }) => [phase, minHp, maxHp, dmg]), [
+    [1, 1000, 1400, 20],
+    [2, 400, 999, 30],
+    [3, 1, 399, 35],
+  ]);
+  assert.deepEqual(UNICRON_RAID.legion.map(({ id, hp, dmg }) => [id, hp, dmg]), [
+    ["the-fallen", 80, 20],
+    ["sideways-unicron", 80, 20],
+    ["rodimus-unicronus", 80, 20],
+  ]);
+  assert.match(UNICRON_RAID.legion[0].ability, /Battle Cards.*useless/i);
+  assert.match(UNICRON_RAID.legion[1].ability, /heal The Fallen for 15/i);
+  assert.match(UNICRON_RAID.legion[2].ability, /15 additional damage/i);
+  for (const unit of [...UNICRON_RAID.phases, ...UNICRON_RAID.legion]) {
+    const publicAsset = readFileSync(new URL(`../public${unit.image}`, import.meta.url));
+    const pagesAsset = readFileSync(new URL(`..${unit.image}`, import.meta.url));
+    assert.equal(publicAsset.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
+    assert.deepEqual(publicAsset, pagesAsset);
+  }
+});
+
+test("Unicron phase mechanics and persistent visible layout are wired into Boss Rush", () => {
+  const home = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const raid = readFileSync(new URL("../app/raid/page.tsx", import.meta.url), "utf8");
+  const server = readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
+  assert.match(home, /href="\/raid\?boss=unicron"/);
+  assert.match(raid, /3 LEGION SPACES · ALL CARDS VISIBLE/);
+  assert.match(raid, /unicron-raid-board/);
+  assert.match(server, /function updateUnicronPhase/);
+  assert.match(server, /room\.judge\.hp >= 1000/);
+  assert.match(server, /room\.judge\.hp >= 400/);
+  assert.match(server, /room\.bossBoard = \[/);
+  assert.match(server, /Sideways restored 15 Health to The Fallen/);
+  assert.match(server, /The Fallen renders all Battle Cards useless/);
+  assert.match(server, /Unicron ignored the attack while his Phase 3 legion remains alive/);
+});
+
 test("Raid is a separate route with twin boards and attack-only hit animations", () => {
   const home = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
   const raid = readFileSync(new URL("../app/raid/page.tsx", import.meta.url), "utf8");
@@ -167,6 +212,36 @@ test("Quick Match pairs the first two waiting players", async () => {
     a.emit("set-ready", true);
     b.emit("set-ready", true);
     await readyPromise;
+  } finally {
+    a.disconnect();
+    b.disconnect();
+    server.kill("SIGTERM");
+  }
+});
+
+test("Boss Rush rooms preserve the selected Unicron encounter", async () => {
+  const port = 3201;
+  const server = spawn(process.execPath, ["server.mjs"], {
+    env: { ...process.env, PORT: String(port), CLIENT_ORIGIN: origin },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  await waitForServer(server);
+  const a = io(`http://127.0.0.1:${port}`, { extraHeaders: { Origin: origin }, reconnection: false });
+  const b = io(`http://127.0.0.1:${port}`, { extraHeaders: { Origin: origin }, reconnection: false });
+  const stateA = tracker(a);
+  try {
+    await Promise.all([new Promise((resolve) => a.once("connect", resolve)), new Promise((resolve) => b.once("connect", resolve))]);
+    assert.equal((await emitReply(a, "raid-join", { code: "CHAOS3", name: "Alpha", boss: "unicron" })).ok, true);
+    const lobby = await stateA.waitFor((state) => state.encounterId === "unicron");
+    assert.equal(lobby.encounterName, "Unicron");
+    assert.deepEqual([lobby.judge.max, lobby.judge.hp, lobby.judge.dmg, lobby.judge.phase], [1400, 1400, 20, 1]);
+    assert.equal(lobby.bossBoard.length, 3);
+    assert.equal(lobby.bossBoard.every((slot) => slot === null), true);
+    assert.equal(lobby.bossRoster.length, 6);
+    const mismatch = await emitReply(b, "raid-join", { code: "CHAOS3", name: "Beta", boss: "quintesson" });
+    assert.equal(mismatch.ok, false);
+    assert.match(mismatch.error, /already assigned to the Unicron Boss Rush/i);
+    assert.equal((await emitReply(b, "raid-join", { code: "CHAOS3", name: "Beta", boss: "unicron" })).ok, true);
   } finally {
     a.disconnect();
     b.disconnect();

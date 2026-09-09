@@ -87,6 +87,13 @@ test("the latest character expansion adds its flight theme and border", () => {
   assert.match(css, /data-card-border="seeker-contrail-frame"/);
 });
 
+test("the Unicron Boss Rush adds its singularity theme and planetary frame", () => {
+  assert.match(page, /\["chaos-bringer-singularity", "Chaos-Bringer Singularity"\]/);
+  assert.match(css, /html\[data-theme="chaos-bringer-singularity"\]/);
+  assert.match(page, /\["planet-maw-frame", "Planet Maw Frame"\]/);
+  assert.match(css, /data-card-border="planet-maw-frame"/);
+});
+
 test("combat history is unlimited while its badge caps at 99+", () => {
   assert.doesNotMatch(page, /\.slice\(0,100\)/);
   assert.match(page, /log\.length > 99 \? "99\+" : log\.length/);

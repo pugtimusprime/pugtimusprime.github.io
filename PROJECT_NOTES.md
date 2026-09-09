@@ -51,6 +51,8 @@ Character Card border history:
 - Empty-deck and Boss Rush stat update: Vector Sigma Dawn, a pale-cyan data-temple theme with sunrise-gold circuitry, deep navy chambers and converging archive rays.
 - Sixteen-character roster update: Terrorcon Crucible, a scorched beast-forge theme with sulfur-gold armor, violet energon seams and angular furnace geometry.
 - Seventeen-character roster update: Aerialbot Skyforge, a high-altitude alloy hangar theme with cyan cloud lanes, amber launch beacons and swept flight geometry.
+- Unicron Boss Rush update: Chaos-Bringer Singularity, a starless black-and-violet cosmic chamber drawn toward a molten planetary maw.
 - Empty-deck and Boss Rush stat update: Spark Forge Frame, a dark forged-metal card border with molten spark channels, offset cyan clamps and hammer-cut corners.
 - Sixteen-character roster update: Mammoth Tusk Frame, an ivory-and-glacial-teal frame with arcing tusk armor, heavy locking bands and a broad beast-era silhouette.
 - Seventeen-character roster update: Seeker Contrail Frame, a swept-wing cyan frame with amber exhaust cuts, tapered flight rails and an asymmetrical airborne silhouette.
+- Unicron Boss Rush update: Planet Maw Frame, a horned black-violet frame curved around a molten orange core with irregular planetary armor cuts.
