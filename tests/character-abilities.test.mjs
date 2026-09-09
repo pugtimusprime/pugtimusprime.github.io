@@ -23,6 +23,11 @@ import {
   hunGrrrWins,
   lastStandDamage,
   transferHealth,
+  empowerBreakdown,
+  matchesFaction,
+  matchesRole,
+  rescueOnslaught,
+  triggerBrawlLastStand,
 } from "../lib/combat-engine.mjs";
 
 const abilitySignals = {
@@ -120,7 +125,46 @@ const abilitySignals = {
   motormaster: /Optimus Prime.*draw 3 Battle Cards/i,
   "nemesis-prime": /copy your other Commander's ability.*\+5 Damage/i,
   ramjet: /Ignore non-Decepticon character abilities for 3 rounds/i,
+  "acid-storm": /Shockwave misses.*toxic.*4 turns/i,
+  "blast-off": /Onslaught dies.*half Health/i,
+  bonecrusher: /every class/i,
+  brawl: /one more turn.*attack once/i,
+  breakdown: /enemy Scout.*10 maximum Health/i,
+  buzzsaw: /Battle Cards.*2 turns/i,
+  "chop-shop": /every faction/i,
+  darkwing: /enemy's Battle Cards.*select 2/i,
+  "dead-end": /above half Health.*draw 4 Battle Cards/i,
 };
+
+test("the nine-card expansion resolves its combat state changes", () => {
+  const unit = (id) => ({ ...allUnits.find((card) => card.id === id) });
+  const bonecrusher = { ...unit("bonecrusher"), allClasses: true };
+  const chopShop = { ...unit("chop-shop"), allFactions: true };
+  assert.equal(matchesRole(bonecrusher, "Scout"), true);
+  assert.equal(matchesFaction(chopShop, "Autobot"), true);
+
+  const breakdown = empowerBreakdown(unit("breakdown"), unit("buzzsaw"));
+  assert.deepEqual(
+    [breakdown.max, breakdown.hp, breakdown.abilityUses],
+    [70, 70, 0],
+  );
+
+  const brawl = triggerBrawlLastStand(unit("brawl"));
+  assert.deepEqual(
+    [brawl.hp, brawl.canAttack, brawl.abilityUses],
+    [1, true, 0],
+  );
+
+  const onslaught = {
+    ...unit("brawl"),
+    id: "onslaught",
+    name: "Onslaught",
+    max: 100,
+    hp: 0,
+  };
+  const rescue = rescueOnslaught(onslaught, [unit("blast-off")]);
+  assert.equal(rescue.revived.hp, 50);
+});
 
 test("every character ability has an explicit regression case", async (t) => {
   assert.deepEqual(
@@ -304,7 +348,10 @@ test("the new passive abilities change deck and round state", () => {
     prepared = applyDeckPassives([alpha, blaster, eject, beachcomber]);
   assert.equal(prepared.find((unit) => unit.id === "eject").max, 45);
   assert.equal(prepared.find((unit) => unit.id === "eject").dmg, 15);
-  assert.equal(prepared.find((unit) => unit.id === "beachcomber").canAttack, false);
+  assert.equal(
+    prepared.find((unit) => unit.id === "beachcomber").canAttack,
+    false,
+  );
   const roundBoard = applyRoundPassives(
     [
       { ...maximal("dirge"), hp: 50 },
@@ -328,7 +375,11 @@ test("Blurr, Mixmaster and Ramjet enforce their special rules", () => {
   assert.equal(
     attackLimit({
       unit: mixmaster,
-      board: [mixmaster, { ...maximal("dirge"), id: "bonecrusher" }, maximal("ramjet")],
+      board: [
+        mixmaster,
+        { ...maximal("dirge"), id: "bonecrusher" },
+        maximal("ramjet"),
+      ],
       deck: [],
       round: 2,
     }),

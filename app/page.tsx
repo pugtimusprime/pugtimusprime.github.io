@@ -58,6 +58,9 @@ import {
   healTransmetalTarantulas,
   hunGrrrWins,
   lastStandDamage,
+  empowerBreakdown,
+  matchesFaction,
+  matchesRole,
   reposition,
   repositionBlurr,
   resolveTrap,
@@ -65,6 +68,7 @@ import {
   shouldLayDepthchargeMine,
   stalemateResult,
   transferHealth,
+  triggerBrawlLastStand,
   validateDeck,
 } from "@/lib/combat-engine.mjs";
 import {
@@ -165,6 +169,10 @@ type OnlineCombatAction = (
   | { kind: "conceal-spaces"; spaces: number[]; untilRound: number }
   | { kind: "timed-shields"; positions: number[]; untilRound: number }
   | { kind: "team-heal"; faction: Faction; amount: number }
+  | { kind: "battle-lock"; untilRound: number }
+  | { kind: "darkwing-scrap"; amount: number }
+  | { kind: "self-scrap"; position: number; unit: Unit }
+  | { kind: "toxic-space"; position: number; untilRound: number }
 ) & { actorName: string };
 type DeckSubmitResponse = { ok: boolean; waiting?: boolean; error?: string };
 
@@ -206,6 +214,7 @@ const themes = [
   ["terrorcon-crucible", "Terrorcon Crucible"],
   ["aerialbot-skyforge", "Aerialbot Skyforge"],
   ["chaos-bringer-singularity", "Chaos-Bringer Singularity"],
+  ["decepticon-war-foundry", "Decepticon War Foundry"],
 ] as const;
 const cardBorders = [
   ["energon-edge", "Energon Edge"],
@@ -230,6 +239,7 @@ const cardBorders = [
   ["mammoth-tusk-frame", "Mammoth Tusk Frame"],
   ["seeker-contrail-frame", "Seeker Contrail Frame"],
   ["planet-maw-frame", "Planet Maw Frame"],
+  ["insecticon-carapace-frame", "Insecticon Carapace Frame"],
 ] as const;
 const activeAbilities = new Set([
   "eject",
@@ -270,6 +280,11 @@ const activeAbilities = new Set([
   "motormaster",
   "nemesis-prime",
   "ramjet",
+  "bonecrusher",
+  "buzzsaw",
+  "chop-shop",
+  "darkwing",
+  "dead-end",
 ]);
 const targetAbility = new Set([
   "eject",
@@ -1022,12 +1037,16 @@ function MultiplayerLobby({
             </span>
             <strong>ENTER RAID</strong>
           </Link>
-          <Link className="boss-rush-entry unicron-entry" href="/raid?boss=unicron">
+          <Link
+            className="boss-rush-entry unicron-entry"
+            href="/raid?boss=unicron"
+          >
             <Skull size={30} />
             <span>
               <b>Unicron Raid</b>
               <small>
-                Two players against the three-phase Chaos Bringer and his visible legion.
+                Two players against the three-phase Chaos Bringer and his
+                visible legion.
               </small>
             </span>
             <strong>FACE UNICRON</strong>
@@ -1176,7 +1195,11 @@ export default function Home() {
     [quietRounds, setQuietRounds] = useState(0),
     [roundDamage, setRoundDamage] = useState(false),
     [hunGrrrWinRound, setHunGrrrWinRound] = useState(5),
-    [cosmosRevealUntil, setCosmosRevealUntil] = useState(0);
+    [cosmosRevealUntil, setCosmosRevealUntil] = useState(0),
+    [battleCardsLockedUntil, setBattleCardsLockedUntil] = useState(0),
+    [toxicSpaces, setToxicSpaces] = useState<Record<number, number>>({}),
+    [darkwingChoices, setDarkwingChoices] = useState<string[]>([]),
+    [darkwingPicks, setDarkwingPicks] = useState<number[]>([]);
   const [feedback, setFeedback] = useState<Feedback>({
       text: "Build your team and take command.",
       tone: "info",
@@ -1208,10 +1231,12 @@ export default function Home() {
     deckAdvancedRef = useRef(false);
   const boardRef = useRef(board),
     backupsRef = useRef(backups),
-    enemyBoardRef = useRef(enemyBoard);
+    enemyBoardRef = useRef(enemyBoard),
+    battleHandRef = useRef(battleHand);
   boardRef.current = board;
   backupsRef.current = backups;
   enemyBoardRef.current = enemyBoard;
+  battleHandRef.current = battleHand;
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("hidden-front-theme", theme);
@@ -1357,6 +1382,48 @@ export default function Home() {
       );
     };
     const combat = (data: OnlineCombatAction) => {
+      if (data.kind === "battle-lock") {
+        setBattleCardsLockedUntil(data.untilRound);
+        flash(
+          `${data.actorName}'s Buzzsaw blocked your Battle Cards for 2 turns.`,
+          "bad",
+        );
+        return;
+      }
+      if (data.kind === "darkwing-scrap") {
+        setBattleHand((cards) =>
+          cards.slice(Math.min(data.amount, cards.length)),
+        );
+        flash(
+          `${data.actorName}'s Darkwing intercepted 2 Battle Cards.`,
+          "bad",
+        );
+        return;
+      }
+      if (data.kind === "self-scrap") {
+        setEnemyBoard((cards) =>
+          cards.map((card, position) =>
+            position === data.position ? null : card,
+          ),
+        );
+        setEnemyScrap((cards) => [...cards, data.unit]);
+        flash(
+          `${data.actorName} scrapped ${data.unit.name} to draw 4 Battle Cards.`,
+          "info",
+        );
+        return;
+      }
+      if (data.kind === "toxic-space") {
+        setToxicSpaces((spaces) => ({
+          ...spaces,
+          [data.position]: data.untilRound,
+        }));
+        flash(
+          `Acid Storm made space ${data.position + 1} toxic for 4 turns.`,
+          "bad",
+        );
+        return;
+      }
       if (data.kind === "team-heal") {
         setEnemyBoard((current) =>
           healFaction(current, data.faction, data.amount),
@@ -1550,6 +1617,27 @@ export default function Home() {
       setPhase("over");
       flash("Your opponent forfeited. You win!", "good");
     };
+    const darkwingRequest = () =>
+      multiplayerSocket.emit("darkwing-hand", { cards: battleHandRef.current });
+    const darkwingHand = (data: { cards?: string[] }) => {
+      setDarkwingChoices(Array.isArray(data.cards) ? data.cards : []);
+      setDarkwingPicks([]);
+    };
+    const darkwingDiscard = (data: { cards?: string[] }) => {
+      const selected = [...(Array.isArray(data.cards) ? data.cards : [])];
+      setBattleHand((hand) =>
+        hand.filter((name) => {
+          const index = selected.indexOf(name);
+          if (index < 0) return true;
+          selected.splice(index, 1);
+          return false;
+        }),
+      );
+      flash(
+        "Darkwing selected and scrapped 2 Battle Cards from your hand.",
+        "bad",
+      );
+    };
     multiplayerSocket.on("decks-ready", ready);
     multiplayerSocket.on("deployments-ready", deployed);
     multiplayerSocket.on("turn-state", turn);
@@ -1559,6 +1647,9 @@ export default function Home() {
     multiplayerSocket.on("match-status", status);
     multiplayerSocket.on("opponent-left", left);
     multiplayerSocket.on("opponent-forfeited", opponentForfeited);
+    multiplayerSocket.on("darkwing-request", darkwingRequest);
+    multiplayerSocket.on("darkwing-hand", darkwingHand);
+    multiplayerSocket.on("darkwing-discard", darkwingDiscard);
     return () => {
       multiplayerSocket.off("decks-ready", ready);
       multiplayerSocket.off("deployments-ready", deployed);
@@ -1569,6 +1660,9 @@ export default function Home() {
       multiplayerSocket.off("match-status", status);
       multiplayerSocket.off("opponent-left", left);
       multiplayerSocket.off("opponent-forfeited", opponentForfeited);
+      multiplayerSocket.off("darkwing-request", darkwingRequest);
+      multiplayerSocket.off("darkwing-hand", darkwingHand);
+      multiplayerSocket.off("darkwing-discard", darkwingDiscard);
     };
   }, [multiplayerSocket]);
   const built = useMemo(
@@ -1614,6 +1708,7 @@ export default function Home() {
     (abilityKey(u) !== "head" || u.hp === u.max);
   const battleWindow =
     !onlineLocked &&
+    round > battleCardsLockedUntil &&
     canPlayBattleCard({
       phase,
       actionsLeft: actions,
@@ -1752,14 +1847,15 @@ export default function Home() {
       return;
     }
     const roster = applyDeckPassives(
-      (enemyFaction === "Random" ? randomEnemyDeck() : enemyDeck(enemyFaction)).map(
-        (unit) => ({
-          ...unit,
-          hp: unit.max,
-          canAttack: unit.id !== "beachcomber",
-          shield: unit.id === "terror" ? 1 : 0,
-        }),
-      ),
+      (enemyFaction === "Random"
+        ? randomEnemyDeck()
+        : enemyDeck(enemyFaction)
+      ).map((unit) => ({
+        ...unit,
+        hp: unit.max,
+        canAttack: unit.id !== "beachcomber",
+        shield: unit.id === "terror" ? 1 : 0,
+      })),
     );
     setEnemyRoster(roster);
     setEnemyScrap([]);
@@ -1955,9 +2051,15 @@ export default function Home() {
     flash(`${u.name} selected. Choose an enemy position.`);
   }
   function defeatEnemy(index: number, unit: Unit, next: Slot[]) {
-    if (unit.id === "blades" && enemyRoster.some((card) => card.id === "brawn")) {
+    if (
+      unit.id === "blades" &&
+      enemyRoster.some((card) => card.id === "brawn")
+    ) {
       setBattleHand([]);
-      flash("Blades fell while Brawn was on the enemy team; every Battle Card in your hand was scrapped.", "bad");
+      flash(
+        "Blades fell while Brawn was on the enemy team; every Battle Card in your hand was scrapped.",
+        "bad",
+      );
     }
     if (
       unit.faction === "Maximal" &&
@@ -2074,7 +2176,10 @@ export default function Home() {
           ),
         );
         if (retaliation.hp === 0) setScrap((cards) => [...cards, attacker]);
-        flash("Beachcomber's pacifist field dealt 10 damage back to the attacker.", "bad");
+        flash(
+          "Beachcomber's pacifist field dealt 10 damage back to the attacker.",
+          "bad",
+        );
       }
       if (target.id === "bluestreak" && attacker.faction === "Autobot") {
         setBoard((current) =>
@@ -2117,30 +2222,57 @@ export default function Home() {
             "bad",
           );
         else if (result.unit.hp === 0) {
-          defeated = target;
-          revealedAttackerId =
-            target.id === "cheetor" ? attacker.id : undefined;
-          networkResult = null;
-          defeatEnemy(index, target, next);
-          if (hasAbility(attacker, "megatron") && target.faction === "Autobot")
-            healWeakest("Decepticon", 10);
-          if (
-            hasAbility(attacker, "grimlock") &&
-            target.role === "Commander" &&
-            attacker.abilityUses > 0
-          ) {
-            setGrimlockFrenzyRound(round + 1);
-            setBoard((v) =>
-              v.map((u, i) =>
-                i === interaction.actor && u
-                  ? { ...u, abilityUses: u.abilityUses - 1 }
-                  : u,
-              ),
-            );
+          const lastStand = triggerBrawlLastStand(target);
+          if (lastStand) {
+            next[index] = lastStand;
+            networkResult = lastStand;
             flash(
-              `${attacker.name} copied Grimlock's frenzy and may use all 3 attacks next round!`,
-              "good",
+              "Brawl entered Last Stand and may make one final attack.",
+              "bad",
             );
+          } else {
+            defeated = target;
+            revealedAttackerId =
+              target.id === "cheetor" ? attacker.id : undefined;
+            networkResult = null;
+            defeatEnemy(index, target, next);
+            if (attacker.id === "breakdown") {
+              const empowered = empowerBreakdown(attacker, target);
+              if (empowered !== attacker) {
+                setBoard((cards) =>
+                  cards.map((card, position) =>
+                    position === interaction.actor ? empowered : card,
+                  ),
+                );
+                flash(
+                  "Breakdown defeated a Scout and permanently gained 10 Health.",
+                  "good",
+                );
+              }
+            }
+            if (
+              hasAbility(attacker, "megatron") &&
+              target.faction === "Autobot"
+            )
+              healWeakest("Decepticon", 10);
+            if (
+              hasAbility(attacker, "grimlock") &&
+              target.role === "Commander" &&
+              attacker.abilityUses > 0
+            ) {
+              setGrimlockFrenzyRound(round + 1);
+              setBoard((v) =>
+                v.map((u, i) =>
+                  i === interaction.actor && u
+                    ? { ...u, abilityUses: u.abilityUses - 1 }
+                    : u,
+                ),
+              );
+              flash(
+                `${attacker.name} copied Grimlock's frenzy and may use all 3 attacks next round!`,
+                "good",
+              );
+            }
           }
         } else
           flash(
@@ -2171,6 +2303,20 @@ export default function Home() {
       attackerName: attacker.name,
       revealedAttackerId,
     });
+    if (attacker.brawlLastStand) {
+      setBoard((current) =>
+        current.map((card, position) =>
+          position === interaction.actor ? null : card,
+        ),
+      );
+      setScrap((cards) => [...cards, { ...attacker, hp: 0 }]);
+      multiplayerSocket?.emit("combat-action", {
+        kind: "self-scrap",
+        position: interaction.actor,
+        unit: { ...attacker, hp: 0 },
+      });
+      flash("Brawl completed his final attack and was scrapped.", "info");
+    }
     const previous = usedAttacks.filter((id) => id === attacker.id).length;
     setUsedAttacks((v) => [...v, attacker.id]);
     if (attacker.id === "sun" && previous === 1)
@@ -2209,7 +2355,10 @@ export default function Home() {
     }
     if (key === "drag-strip") {
       if (!battleHand.length) {
-        flash("Drag Strip needs a Battle Card in your hand to duplicate.", "bad");
+        flash(
+          "Drag Strip needs a Battle Card in your hand to duplicate.",
+          "bad",
+        );
         return;
       }
       setInteraction({ kind: "drag-strip", actor: index });
@@ -2237,7 +2386,7 @@ export default function Home() {
     if (key === "wheeljack") {
       setScoutBuff(
         board
-          .filter((x): x is Unit => !!x && x.role === "Scout")
+          .filter((x): x is Unit => !!x && matchesRole(x, "Scout"))
           .map((x) => x.id),
       );
       flash("Wheeljack empowered every deployed Scout's next attack.", "good");
@@ -2378,7 +2527,10 @@ export default function Home() {
         return;
       }
       setHunGrrrWinRound(4);
-      flash("Sinnertwin lowered Hun-Grrr's untouched victory condition to round 4.", "good");
+      flash(
+        "Sinnertwin lowered Hun-Grrr's untouched victory condition to round 4.",
+        "good",
+      );
     } else if (key === "rippersnapper") {
       setBoard((current) =>
         current.map((card, position) =>
@@ -2391,14 +2543,20 @@ export default function Home() {
             : card,
         ),
       );
-      flash("Rippersnapper is immune to all damage through the next 3 rounds.", "good");
+      flash(
+        "Rippersnapper is immune to all damage through the next 3 rounds.",
+        "good",
+      );
     } else if (key === "big-convoy") {
       if (!board.some((card) => card?.id === "ultra-mammoth")) {
         flash("Big Convoy requires Ultra Mammoth deployed.", "bad");
         return;
       }
       setBoard((current) => healFrontRow(current, 5));
-      flash("Big Convoy turned the front row into healing zones and restored 5 Health there.", "good");
+      flash(
+        "Big Convoy turned the front row into healing zones and restored 5 Health there.",
+        "good",
+      );
     } else if (key === "claw-jaw") {
       if (!board.some((card) => card?.id === "depthcharge")) {
         flash("Claw Jaw requires Depthcharge deployed.", "bad");
@@ -2419,21 +2577,39 @@ export default function Home() {
       flash("Claw Jaw gained a shield lasting 3 rounds.", "good");
     } else if (key === "polar-claw") {
       if (playerLeft !== 1) {
-        flash("Polar Claw can reveal the enemy formation only as your last survivor.", "bad");
+        flash(
+          "Polar Claw can reveal the enemy formation only as your last survivor.",
+          "bad",
+        );
         return;
       }
-      setRevealed(enemyBoard.map((card, position) => (card ? position : -1)).filter((position) => position >= 0));
-      setPermanentRevealedIds(
-        enemyBoard.filter((card): card is Unit => Boolean(card)).map((card) => card.id),
+      setRevealed(
+        enemyBoard
+          .map((card, position) => (card ? position : -1))
+          .filter((position) => position >= 0),
       );
-      flash("Polar Claw permanently exposed every surviving enemy position.", "good");
+      setPermanentRevealedIds(
+        enemyBoard
+          .filter((card): card is Unit => Boolean(card))
+          .map((card) => card.id),
+      );
+      flash(
+        "Polar Claw permanently exposed every surviving enemy position.",
+        "good",
+      );
     } else if (key === "razorbeast") {
       const amount = scrap.filter((card) => card.faction === "Maximal").length;
       if (!amount) {
-        flash("Razorbeast needs at least one defeated Maximal before using this ability.", "bad");
+        flash(
+          "Razorbeast needs at least one defeated Maximal before using this ability.",
+          "bad",
+        );
         return;
       }
-      flash(`Razorbeast drew ${drawCards(amount)} Battle Card${amount === 1 ? "" : "s"}.`, "good");
+      flash(
+        `Razorbeast drew ${drawCards(amount)} Battle Card${amount === 1 ? "" : "s"}.`,
+        "good",
+      );
     } else if (key === "ultra-mammoth") {
       setBoard((current) =>
         current.map((card, position) =>
@@ -2456,12 +2632,15 @@ export default function Home() {
     } else if (key === "air-raid") {
       setBoard((current) =>
         current.map((card) =>
-          card?.role === "Trooper"
+          matchesRole(card, "Trooper")
             ? { ...card, airRaidBoostUntil: round + 1 }
             : card,
         ),
       );
-      flash("Air Raid gave every friendly Trooper +10 Damage for 2 rounds.", "good");
+      flash(
+        "Air Raid gave every friendly Trooper +10 Damage for 2 rounds.",
+        "good",
+      );
     } else if (key === "motormaster") {
       if (!enemyRoster.some((card) => card.id === "optimus")) {
         flash("Motormaster requires Optimus Prime on the enemy team.", "bad");
@@ -2470,7 +2649,10 @@ export default function Home() {
       flash(`Motormaster drew ${drawCards(3)} Battle Cards.`, "good");
     } else if (key === "nemesis-prime") {
       if (round !== 1) {
-        flash("Nemesis Prime can only clone a Commander during round 1.", "bad");
+        flash(
+          "Nemesis Prime can only clone a Commander during round 1.",
+          "bad",
+        );
         return;
       }
       const commander = board.find(
@@ -2493,7 +2675,10 @@ export default function Home() {
             : card,
         ),
       );
-      flash(`Nemesis Prime cloned ${commander.name}'s ability and gained +5 Damage.`, "good");
+      flash(
+        `Nemesis Prime cloned ${commander.name}'s ability and gained +5 Damage.`,
+        "good",
+      );
     } else if (key === "ramjet") {
       setBoard((current) =>
         current.map((card, position) =>
@@ -2502,10 +2687,75 @@ export default function Home() {
             : card,
         ),
       );
-      flash("Ramjet ignores non-Decepticon character abilities for 3 rounds.", "good");
+      flash(
+        "Ramjet ignores non-Decepticon character abilities for 3 rounds.",
+        "good",
+      );
+    } else if (key === "bonecrusher") {
+      setBoard((current) =>
+        current.map((card, position) =>
+          position === index && card ? { ...card, allClasses: true } : card,
+        ),
+      );
+      flash("Bonecrusher now qualifies for every class-based ability.", "good");
+    } else if (key === "chop-shop") {
+      setBoard((current) =>
+        current.map((card, position) =>
+          position === index && card ? { ...card, allFactions: true } : card,
+        ),
+      );
+      flash(
+        "Chop Shop now qualifies for every faction-exclusive ability.",
+        "good",
+      );
+    } else if (key === "buzzsaw") {
+      multiplayerSocket?.emit("combat-action", {
+        kind: "battle-lock",
+        untilRound: round + 1,
+      });
+      flash(
+        "Buzzsaw disabled the enemy's Battle Cards for their next 2 turns.",
+        "good",
+      );
+    } else if (key === "darkwing") {
+      multiplayerSocket?.emit("darkwing-request");
+      flash(
+        multiplayerSocket
+          ? "Darkwing revealed and intercepted 2 enemy Battle Cards."
+          : "Darkwing found no enemy Battle Card hand in the solo battle.",
+        multiplayerSocket ? "good" : "info",
+      );
+    } else if (key === "dead-end") {
+      if (u.hp <= u.max / 2) {
+        flash("Dead End must be above half Health to use this ability.", "bad");
+        return;
+      }
+      const drawn = drawCards(4);
+      setBoard((current) =>
+        current.map((card, position) => (position === index ? null : card)),
+      );
+      setScrap((cards) => [...cards, { ...u, abilityUses: 0 }]);
+      multiplayerSocket?.emit("combat-action", {
+        kind: "self-scrap",
+        position: index,
+        unit: { ...u, abilityUses: 0 },
+      });
+      flash(`Dead End was scrapped and drew ${drawn} Battle Cards.`, "good");
     } else if (key === "cyclonus") {
-      setBoard((current) => healFaction(current, "Decepticon", 5));
-      setBackups((current) => healFaction(current, "Decepticon", 5));
+      setBoard((current) =>
+        current.map((card) =>
+          matchesFaction(card, "Decepticon") && card
+            ? { ...card, hp: Math.min(card.max, card.hp + 5) }
+            : card,
+        ),
+      );
+      setBackups((current) =>
+        current.map((card) =>
+          matchesFaction(card, "Decepticon")
+            ? { ...card, hp: Math.min(card.max, card.hp + 5) }
+            : card,
+        ),
+      );
       multiplayerSocket?.emit("combat-action", {
         kind: "team-heal",
         faction: "Decepticon",
@@ -2703,10 +2953,16 @@ export default function Home() {
       }
       next[interaction.actor] = result.source;
       next[index] = result.target;
-      flash(`Dion transferred ${result.amount} Health to ${target.name}.`, "good");
+      flash(
+        `Dion transferred ${result.amount} Health to ${target.name}.`,
+        "good",
+      );
     } else if (interaction.kind === "firestar") {
       if (index === interaction.actor) {
-        flash("Choose a different friendly character for Firestar to swap with.", "bad");
+        flash(
+          "Choose a different friendly character for Firestar to swap with.",
+          "bad",
+        );
         return true;
       }
       [next[interaction.actor], next[index]] = [
@@ -2716,7 +2972,10 @@ export default function Home() {
       flash(`Firestar swapped positions with ${target.name}.`, "good");
     } else {
       if (actor.hp <= 10) {
-        flash("Chromia needs more than 10 Health to activate her healing zone.", "bad");
+        flash(
+          "Chromia needs more than 10 Health to activate her healing zone.",
+          "bad",
+        );
         return true;
       }
       next[interaction.actor] = {
@@ -2779,6 +3038,21 @@ export default function Home() {
           "good",
         );
       setRoundDamage(true);
+    } else if (
+      key === "shockwave" &&
+      !target &&
+      board.some((card) => card?.id === "acid-storm")
+    ) {
+      const untilRound = round + 3;
+      multiplayerSocket?.emit("combat-action", {
+        kind: "toxic-space",
+        position: index,
+        untilRound,
+      });
+      flash(
+        `Shockwave missed; Acid Storm made space ${index + 1} toxic for 4 turns.`,
+        "good",
+      );
     } else if (key === "bombshell" && target) {
       const r = applyDamage(target, target.dmg);
       next[index] = r.unit;
@@ -3139,6 +3413,11 @@ export default function Home() {
       target.zone !== "board"
     )
       return;
+    if ((toxicSpaces[target.index] ?? 0) >= round) {
+      setDragSource(null);
+      flash("That space is toxic and cannot receive a character yet.", "bad");
+      return;
+    }
     if (board[target.index]) {
       setDragSource(null);
       flash(
@@ -3155,8 +3434,7 @@ export default function Home() {
     }
     const nextBoard = applyBoardAuras(
       result.board.map((unit) =>
-        unit?.id === "brainstorm" &&
-        unit.brainstormDeployedRound === undefined
+        unit?.id === "brainstorm" && unit.brainstormDeployedRound === undefined
           ? { ...unit, brainstormDeployedRound: round }
           : unit,
       ),
@@ -3267,6 +3545,11 @@ export default function Home() {
       target.zone === "hand"
     )
       return;
+    if ((toxicSpaces[target.index] ?? 0) >= round) {
+      setDragSource(null);
+      flash("That space is toxic and cannot receive a character yet.", "bad");
+      return;
+    }
     const moving =
         source.zone === "board"
           ? board[source.index]
@@ -3286,7 +3569,10 @@ export default function Home() {
     }
     if (moving?.locked) {
       setDragSource(null);
-      flash(`${moving.name} is locked in place and cannot be repositioned.`, "bad");
+      flash(
+        `${moving.name} is locked in place and cannot be repositioned.`,
+        "bad",
+      );
       return;
     }
     let nextBoard = applyBoardAuras(result.board);
@@ -3440,7 +3726,10 @@ export default function Home() {
           ),
         ),
       );
-      flash("Beachcomber's pacifist field dealt 10 damage back to the attacker.", "good");
+      flash(
+        "Beachcomber's pacifist field dealt 10 damage back to the attacker.",
+        "good",
+      );
     }
     if (target.id === "hun-grrr" && result.damage > 0)
       result.unit.hunGrrrEligible = false;
@@ -3595,8 +3884,7 @@ export default function Home() {
             (attacker.x.airRaidBoostUntil ?? 0) >= round
               ? 10
               : 0) +
-            (attacker.x.id === "misfire" &&
-            pb[target]?.role === "Tactician"
+            (attacker.x.id === "misfire" && pb[target]?.role === "Tactician"
               ? 5
               : 0) +
             (attacker.x.id === "wolfang" &&
@@ -3736,15 +4024,25 @@ export default function Home() {
           : u,
       );
     const poisonDeaths: Unit[] = [];
-    const eb = applyBoardAuras(applyRoundPassives(expireTimedShields(
-      repositionBlurr(poisoned.map((u) => {
-        if (u && u.hp === 0) {
-          poisonDeaths.push(u);
-          return null;
-        }
-        return u;
-      }), round),
-      newRound), newRound, moved.backups));
+    const eb = applyBoardAuras(
+      applyRoundPassives(
+        expireTimedShields(
+          repositionBlurr(
+            poisoned.map((u) => {
+              if (u && u.hp === 0) {
+                poisonDeaths.push(u);
+                return null;
+              }
+              return u;
+            }),
+            round,
+          ),
+          newRound,
+        ),
+        newRound,
+        moved.backups,
+      ),
+    );
     if (poisonDeaths.length) {
       setEnemyScrap((v) => [...v, ...poisonDeaths]);
       setEnemyDefeatPending(true);
@@ -3872,6 +4170,54 @@ export default function Home() {
           />
         </div>
         {children}
+        {!!darkwingChoices.length && (
+          <div className="darkwing-overlay" role="dialog" aria-modal="true">
+            <section className="darkwing-panel">
+              <p className="eyebrow">DARKWING INTERCEPT</p>
+              <h2>Select 2 enemy Battle Cards</h2>
+              <div className="darkwing-card-grid">
+                {darkwingChoices.map((name, index) => (
+                  <button
+                    key={`${name}-${index}`}
+                    className={darkwingPicks.includes(index) ? "selected" : ""}
+                    onClick={() =>
+                      setDarkwingPicks((picks) =>
+                        picks.includes(index)
+                          ? picks.filter((pick) => pick !== index)
+                          : picks.length < 2
+                            ? [...picks, index]
+                            : picks,
+                      )
+                    }
+                  >
+                    <img src={battleCards[name].image} alt="" />
+                    <b>{name}</b>
+                  </button>
+                ))}
+              </div>
+              <button
+                className="primary"
+                disabled={
+                  darkwingPicks.length !== Math.min(2, darkwingChoices.length)
+                }
+                onClick={() => {
+                  const cards = darkwingPicks.map(
+                    (index) => darkwingChoices[index],
+                  );
+                  multiplayerSocket?.emit("darkwing-discard", { cards });
+                  setDarkwingChoices([]);
+                  setDarkwingPicks([]);
+                  flash(
+                    `Darkwing scrapped ${cards.length} selected enemy Battle Cards.`,
+                    "good",
+                  );
+                }}
+              >
+                Scrap selected cards
+              </button>
+            </section>
+          </div>
+        )}
         <CardInspector unit={inspectedUnit} />
       </main>
     </CardInspectContext.Provider>

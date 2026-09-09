@@ -70,6 +70,15 @@ const expected = {
   motormaster: ["Motormaster", "Decepticon", "Commander", 80, 20],
   "nemesis-prime": ["Nemesis Prime", "Decepticon", "Commander", 80, 20],
   ramjet: ["Ramjet", "Decepticon", "Tactician", 50, 15],
+  bonecrusher: ["Bonecrusher", "Autobot", "Tactician", 70, 10],
+  "acid-storm": ["Acid Storm", "Decepticon", "Tactician", 50, 15],
+  "blast-off": ["Blast Off", "Decepticon", "Tactician", 70, 10],
+  brawl: ["Brawl", "Decepticon", "Trooper", 60, 25],
+  breakdown: ["Breakdown", "Decepticon", "Trooper", 60, 25],
+  buzzsaw: ["Buzzsaw", "Decepticon", "Scout", 40, 5],
+  "chop-shop": ["Chop Shop", "Decepticon", "Trooper", 60, 25],
+  darkwing: ["Darkwing", "Decepticon", "Tactician", 50, 15],
+  "dead-end": ["Dead End", "Decepticon", "Tactician", 70, 10],
 };
 
 test("all newly supplied characters have the printed names, teams, classes and stats", () => {
@@ -92,8 +101,8 @@ test("all newly supplied characters have the printed names, teams, classes and s
 });
 
 test("the expanded faction totals stay correct", () => {
-  assert.equal(rosters.Autobot.length, 29);
-  assert.equal(rosters.Decepticon.length, 29);
+  assert.equal(rosters.Autobot.length, 30);
+  assert.equal(rosters.Decepticon.length, 37);
   assert.equal(rosters.Predacon.length, 18);
   assert.equal(rosters.Maximal.length, 18);
 });

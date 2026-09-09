@@ -5,7 +5,16 @@ import { io, type Socket } from "socket.io-client";
 import Link from "next/link";
 import { allUnits, type BossRushBattleCard, type Unit } from "@/lib/card-data";
 
-type RaidStage = "lobby" | "deckbuilding" | "briefing" | "deployment" | "combat" | "boss" | "reposition" | "victory" | "defeat";
+type RaidStage =
+  | "lobby"
+  | "deckbuilding"
+  | "briefing"
+  | "deployment"
+  | "combat"
+  | "boss"
+  | "reposition"
+  | "victory"
+  | "defeat";
 type RaidBossUnit = {
   id: string;
   name: string;
@@ -111,7 +120,10 @@ function RaidCardInspector({ unit }: { unit: RaidInspectable | null }) {
       <div>
         <p>CARD DETAILS</p>
         <h2>{unit.name}</h2>
-        <span>{[unit.faction, unit.role].filter(Boolean).join(" · ") || "QUINTESSON BOSS"}</span>
+        <span>
+          {[unit.faction, unit.role].filter(Boolean).join(" · ") ||
+            "QUINTESSON BOSS"}
+        </span>
         <small>{unit.ability || "No special ability text."}</small>
         <b>
           {unit.hp ?? unit.max}/{unit.max} HP · {unit.dmg} DMG
@@ -127,7 +139,9 @@ export default function RaidPage() {
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [state, setState] = useState<RaidState | null>(null);
-  const [message, setMessage] = useState("Create a room code and share it with one co-op partner.");
+  const [message, setMessage] = useState(
+    "Create a room code and share it with one co-op partner.",
+  );
   const [deck, setDeck] = useState<Unit[]>([]);
   const [locked, setLocked] = useState(false);
   const [attacker, setAttacker] = useState<string | null>(null);
@@ -136,11 +150,15 @@ export default function RaidPage() {
   const [moveSource, setMoveSource] = useState<number | null>(null);
   const [backupSource, setBackupSource] = useState<string | null>(null);
   const [animation, setAnimation] = useState<RaidEvent | null>(null);
-  const [deathNotices, setDeathNotices] = useState<Array<{ name: string; seq: number }>>([]);
+  const [deathNotices, setDeathNotices] = useState<
+    Array<{ name: string; seq: number }>
+  >([]);
   const [inspected, setInspected] = useState<RaidInspectable | null>(null);
   const [roleFilter, setRoleFilter] = useState("All");
   const [factionFilter, setFactionFilter] = useState("All");
-  const [selectedBoss, setSelectedBoss] = useState<"quintesson" | "unicron">("quintesson");
+  const [selectedBoss, setSelectedBoss] = useState<"quintesson" | "unicron">(
+    "quintesson",
+  );
 
   useEffect(() => {
     const boss = new URLSearchParams(window.location.search).get("boss");
@@ -159,13 +177,29 @@ export default function RaidPage() {
         setBackupSource(null);
       }
       if (next.stage !== "combat") setAbilitySource(null);
-      if (next.stage === "lobby" || next.stage === "deckbuilding" || next.stage === "deployment") setDeathNotices([]);
+      if (
+        next.stage === "lobby" ||
+        next.stage === "deckbuilding" ||
+        next.stage === "deployment"
+      )
+        setDeathNotices([]);
     };
     const onEvent = (event: RaidEvent) => {
-      if (event.kind === "player-defeat" && event.defeatedName) setDeathNotices((current) => (current.some((notice) => notice.seq === event.seq) ? current : [...current, { name: event.defeatedName!, seq: event.seq }]));
+      if (event.kind === "player-defeat" && event.defeatedName)
+        setDeathNotices((current) =>
+          current.some((notice) => notice.seq === event.seq)
+            ? current
+            : [...current, { name: event.defeatedName!, seq: event.seq }],
+        );
       if (event.kind === "hit" && (event.damage || 0) > 0) {
         setAnimation(event);
-        window.setTimeout(() => setAnimation((current) => (current?.seq === event.seq ? null : current)), 800);
+        window.setTimeout(
+          () =>
+            setAnimation((current) =>
+              current?.seq === event.seq ? null : current,
+            ),
+          800,
+        );
       }
     };
     socket.on("raid-state", onState);
@@ -178,37 +212,98 @@ export default function RaidPage() {
 
   const me = state?.players.find((player) => player.id === state.youId);
   const deathNotice = deathNotices[0] || null;
-  const displayPlayers = state ? [...state.players].sort((a, b) => Number(b.id === state.youId) - Number(a.id === state.youId)) : [];
+  const displayPlayers = state
+    ? [...state.players].sort(
+        (a, b) => Number(b.id === state.youId) - Number(a.id === state.youId),
+      )
+    : [];
   const active = state?.stage === "combat" && state.activeId === state.youId;
-  const placing = state?.stage === "deployment" && Boolean(me?.team?.pending?.length);
-  const moving = state?.stage === "reposition" && (state.repositions[state.youId] || 0) > 0;
-  const counts = useMemo(() => Object.fromEntries(["Commander", "Scout", "Trooper", "Tactician"].map((role) => [role, deck.filter((unit) => unit.role === role).length])), [deck]);
-  const legal = deck.length === 9 && counts.Commander === 2 && counts.Scout === 3 && counts.Trooper === 2 && counts.Tactician === 2;
-  const filteredUnits = allUnits.filter((unit) => (roleFilter === "All" || unit.role === roleFilter) && (factionFilter === "All" || unit.faction === factionFilter));
-  const rolePool = allUnits.filter((unit) => factionFilter === "All" || unit.faction === factionFilter);
-  const factionPool = allUnits.filter((unit) => roleFilter === "All" || unit.role === roleFilter);
-  const roleCount = (role: string) => rolePool.filter((unit) => unit.role === role).length;
-  const factionCount = (faction: string) => factionPool.filter((unit) => unit.faction === faction).length;
-  const boardFor = (player: RaidPlayer | undefined) => player?.team?.board || Array(9).fill(null);
+  const placing =
+    state?.stage === "deployment" && Boolean(me?.team?.pending?.length);
+  const moving =
+    state?.stage === "reposition" && (state.repositions[state.youId] || 0) > 0;
+  const counts = useMemo(
+    () =>
+      Object.fromEntries(
+        ["Commander", "Scout", "Trooper", "Tactician"].map((role) => [
+          role,
+          deck.filter((unit) => unit.role === role).length,
+        ]),
+      ),
+    [deck],
+  );
+  const legal =
+    deck.length === 9 &&
+    counts.Commander === 2 &&
+    counts.Scout === 3 &&
+    counts.Trooper === 2 &&
+    counts.Tactician === 2;
+  const filteredUnits = allUnits.filter(
+    (unit) =>
+      (roleFilter === "All" || unit.role === roleFilter) &&
+      (factionFilter === "All" || unit.faction === factionFilter),
+  );
+  const rolePool = allUnits.filter(
+    (unit) => factionFilter === "All" || unit.faction === factionFilter,
+  );
+  const factionPool = allUnits.filter(
+    (unit) => roleFilter === "All" || unit.role === roleFilter,
+  );
+  const roleCount = (role: string) =>
+    rolePool.filter((unit) => unit.role === role).length;
+  const factionCount = (faction: string) =>
+    factionPool.filter((unit) => unit.faction === faction).length;
+  const boardFor = (player: RaidPlayer | undefined) =>
+    player?.team?.board || Array(9).fill(null);
   const ownUnitAt = (slot: number) => me?.team?.board[slot] || null;
-  const isAnimated = (id?: string, slot?: number) => (animation && ((id && animation.targetId === id) || (Number.isInteger(slot) && animation.targetSlot === slot)) ? `raid-hit-animation raid-animation-${animation.seq}` : "");
+  const isAnimated = (id?: string, slot?: number) =>
+    animation &&
+    ((id && animation.targetId === id) ||
+      (Number.isInteger(slot) && animation.targetSlot === slot))
+      ? `raid-hit-animation raid-animation-${animation.seq}`
+      : "";
 
   function join() {
     const url = server.trim().replace(/\/$/, "");
     if (!url || code.trim().length < 3) {
-      setMessage("Enter the Render server address and a room code of at least three characters.");
+      setMessage(
+        "Enter the Render server address and a room code of at least three characters.",
+      );
       return;
     }
     socket?.disconnect();
     const next = io(url, { transports: ["websocket"] });
     setSocket(next);
-    next.on("connect", () => next.emit("raid-join", { name, code, boss: selectedBoss }, (reply: RaidReply) => setMessage(reply.ok ? "Raid room joined. Ready up when your ally arrives." : reply.error || "Could not join the Raid room.")));
-    next.on("connect_error", () => setMessage("The Raid server is waking up or unavailable. Try connecting again in a moment."));
-    next.on("disconnect", () => setMessage("Connection lost. Socket recovery will retry briefly."));
+    next.on("connect", () =>
+      next.emit(
+        "raid-join",
+        { name, code, boss: selectedBoss },
+        (reply: RaidReply) =>
+          setMessage(
+            reply.ok
+              ? "Raid room joined. Ready up when your ally arrives."
+              : reply.error || "Could not join the Raid room.",
+          ),
+      ),
+    );
+    next.on("connect_error", () =>
+      setMessage(
+        "The Raid server is waking up or unavailable. Try connecting again in a moment.",
+      ),
+    );
+    next.on("disconnect", () =>
+      setMessage("Connection lost. Socket recovery will retry briefly."),
+    );
   }
   function toggle(unit: Unit) {
     if (locked) return;
-    setDeck((current) => (current.some((entry) => entry.id === unit.id) ? current.filter((entry) => entry.id !== unit.id) : current.length < 9 ? [...current, unit] : current));
+    setDeck((current) =>
+      current.some((entry) => entry.id === unit.id)
+        ? current.filter((entry) => entry.id !== unit.id)
+        : current.length < 9
+          ? [...current, unit]
+          : current,
+    );
   }
   function moveDeckCard(index: number, direction: -1 | 1) {
     if (locked) return;
@@ -216,7 +311,10 @@ export default function RaidPage() {
     if (destination < 0 || destination >= deck.length) return;
     setDeck((current) => {
       const reordered = [...current];
-      [reordered[index], reordered[destination]] = [reordered[destination], reordered[index]];
+      [reordered[index], reordered[destination]] = [
+        reordered[destination],
+        reordered[index],
+      ];
       return reordered;
     });
   }
@@ -227,7 +325,9 @@ export default function RaidPage() {
       (reply: RaidReply) => {
         if (reply.ok) {
           setLocked(true);
-          setMessage("Deck locked. After both decks are ready, you and your ally can place all six characters at the same time.");
+          setMessage(
+            "Deck locked. After both decks are ready, you and your ally can place all six characters at the same time.",
+          );
         } else setMessage(reply.error || "The server rejected this Raid deck.");
       },
     );
@@ -235,39 +335,111 @@ export default function RaidPage() {
   function playBattleCard(name: string) {
     if (!active || state?.battlePlayed) return;
     socket?.emit("raid-play-battle", { name }, (reply: RaidReply) => {
-      setMessage(reply.ok ? `${name} activated.` : reply.error || "That Boss Rush Battle Card cannot be played now.");
+      setMessage(
+        reply.ok
+          ? `${name} activated.`
+          : reply.error || "That Boss Rush Battle Card cannot be played now.",
+      );
     });
   }
   function choosePlacement(slot: number) {
     if (!placing || !placement || ownUnitAt(slot)) return;
-    socket?.emit("raid-place", { unitId: placement, slot }, (reply: RaidReply) => {
-      if (!reply.ok) setMessage(reply.error || "That space is unavailable.");
-      else setPlacement(null);
-    });
+    socket?.emit(
+      "raid-place",
+      { unitId: placement, slot },
+      (reply: RaidReply) => {
+        if (!reply.ok) setMessage(reply.error || "That space is unavailable.");
+        else setPlacement(null);
+      },
+    );
   }
   function chooseCombatCard(unit: Unit) {
     if (!active || unit.hp <= 0 || me?.team?.used?.includes(unit.id)) return;
     setAttacker((current) => (current === unit.id ? null : unit.id));
     setAbilitySource(null);
   }
-  const abilityTargets = new Set(["eject", "bombshell", "shockwave", "head", "arachnia"]);
-  const raidActiveAbilities = new Set(["eject", "wheeljack", "soundwave", "bombshell", "overlord", "shockwave", "pmega", "wasp", "head", "arachnia", "razor", "getaway", "grapple", "highbrow", "hoist", "bludgeon", "jhiaxus", "rumble", "rattrap", "rhinox", "cyclonus", "cutthroat", "sinnertwin", "rippersnapper", "big-convoy", "claw-jaw", "polar-claw", "razorbeast", "ultra-mammoth", "wolfang", "dion", "firestar", "air-raid", "chromia", "drag-strip", "motormaster", "nemesis-prime", "ramjet"]);
+  const abilityTargets = new Set([
+    "eject",
+    "bombshell",
+    "shockwave",
+    "head",
+    "arachnia",
+  ]);
+  const raidActiveAbilities = new Set([
+    "eject",
+    "wheeljack",
+    "soundwave",
+    "bombshell",
+    "overlord",
+    "shockwave",
+    "pmega",
+    "wasp",
+    "head",
+    "arachnia",
+    "razor",
+    "getaway",
+    "grapple",
+    "highbrow",
+    "hoist",
+    "bludgeon",
+    "jhiaxus",
+    "rumble",
+    "rattrap",
+    "rhinox",
+    "cyclonus",
+    "cutthroat",
+    "sinnertwin",
+    "rippersnapper",
+    "big-convoy",
+    "claw-jaw",
+    "polar-claw",
+    "razorbeast",
+    "ultra-mammoth",
+    "wolfang",
+    "dion",
+    "firestar",
+    "air-raid",
+    "chromia",
+    "drag-strip",
+    "motormaster",
+    "nemesis-prime",
+    "ramjet",
+    "bonecrusher",
+    "buzzsaw",
+    "chop-shop",
+    "darkwing",
+    "dead-end",
+  ]);
   function activateAbility(sourceId: string) {
     if (!active || !me?.team) return;
-    const source = me.team.board.find((unit) => unit?.id === sourceId) || me.team.backups.find((unit) => unit?.id === sourceId);
-    if (!source || !(source.abilityUses > 0) || me.team.usedAbilities?.includes(sourceId)) return;
+    const source =
+      me.team.board.find((unit) => unit?.id === sourceId) ||
+      me.team.backups.find((unit) => unit?.id === sourceId);
+    if (
+      !source ||
+      !(source.abilityUses > 0) ||
+      me.team.usedAbilities?.includes(sourceId)
+    )
+      return;
     if (!raidActiveAbilities.has(sourceId) && sourceId !== "galvatron") {
-      setMessage(`${source.name}'s ability triggers automatically during combat.`);
+      setMessage(
+        `${source.name}'s ability triggers automatically during combat.`,
+      );
       return;
     }
     setAttacker(null);
     if (abilityTargets.has(sourceId)) {
       setAbilitySource((current) => (current === sourceId ? null : sourceId));
-      setMessage(sourceId === "head" ? "Choose a court space. Headstrong will destroy both cards if occupied." : `${source.name} is ready. Choose a court target.`);
+      setMessage(
+        sourceId === "head"
+          ? "Choose a court space. Headstrong will destroy both cards if occupied."
+          : `${source.name} is ready. Choose a court target.`,
+      );
       return;
     }
     socket?.emit("raid-use-ability", { sourceId }, (reply: RaidReply) => {
-      if (!reply.ok) setMessage(reply.error || "That unique ability cannot be used now.");
+      if (!reply.ok)
+        setMessage(reply.error || "That unique ability cannot be used now.");
     });
   }
   function attack(targetId?: string, targetSlot?: number) {
@@ -280,16 +452,23 @@ export default function RaidPage() {
           ...(targetId ? { targetId } : { targetSlot }),
         },
         (reply: RaidReply) => {
-          if (!reply.ok) setMessage(reply.error || "That unique ability cannot target this space.");
+          if (!reply.ok)
+            setMessage(
+              reply.error || "That unique ability cannot target this space.",
+            );
         },
       );
       setAbilitySource(null);
       return;
     }
     if (!attacker) return;
-    socket?.emit("raid-attack", { attackerId: attacker, ...(targetId ? { targetId } : { targetSlot }) }, (reply: RaidReply) => {
-      if (!reply.ok) setMessage(reply.error || "That attack is unavailable.");
-    });
+    socket?.emit(
+      "raid-attack",
+      { attackerId: attacker, ...(targetId ? { targetId } : { targetSlot }) },
+      (reply: RaidReply) => {
+        if (!reply.ok) setMessage(reply.error || "That attack is unavailable.");
+      },
+    );
     setAttacker(null);
   }
   function reposition(slot: number) {
@@ -300,10 +479,17 @@ export default function RaidPage() {
         setMessage("Choose a deployed character to swap with this Backup.");
         return;
       }
-      socket?.emit("raid-backup-swap", { backupId: backupSource, slot }, (reply: RaidReply) => {
-        if (!reply.ok) setMessage(reply.error || "That Backup cannot be swapped in right now.");
-        else setMessage("Backup swapped onto your board.");
-      });
+      socket?.emit(
+        "raid-backup-swap",
+        { backupId: backupSource, slot },
+        (reply: RaidReply) => {
+          if (!reply.ok)
+            setMessage(
+              reply.error || "That Backup cannot be swapped in right now.",
+            );
+          else setMessage("Backup swapped onto your board.");
+        },
+      );
       setBackupSource(null);
       return;
     }
@@ -315,16 +501,26 @@ export default function RaidPage() {
       setMoveSource(null);
       return;
     }
-    socket?.emit("raid-reposition", { unitId: ownUnitAt(moveSource)?.id, from: moveSource, to: slot }, (reply: RaidReply) => {
-      if (!reply.ok) setMessage(reply.error || "You can only reposition your own cards into a free space or onto your own card.");
-      setMoveSource(null);
-    });
+    socket?.emit(
+      "raid-reposition",
+      { unitId: ownUnitAt(moveSource)?.id, from: moveSource, to: slot },
+      (reply: RaidReply) => {
+        if (!reply.ok)
+          setMessage(
+            reply.error ||
+              "You can only reposition your own cards into a free space or onto your own card.",
+          );
+        setMoveSource(null);
+      },
+    );
   }
   function selectBackup(id: string) {
     if (!moving || !me?.team?.backups.some((unit) => unit.id === id)) return;
     setMoveSource(null);
     setBackupSource((current) => (current === id ? null : id));
-    setMessage("Choose one of your deployed characters to swap with this Backup.");
+    setMessage(
+      "Choose one of your deployed characters to swap with this Backup.",
+    );
   }
   function closeDeathNotice() {
     setDeathNotices((current) => current.slice(1));
@@ -335,30 +531,68 @@ export default function RaidPage() {
       <main className="raid-page">
         <section className="raid-lobby">
           <p className="eyebrow">ONLINE CO-OP PVE</p>
-          <h1>{selectedBoss === "unicron" ? "Unicron Boss Rush" : "Quintesson Boss Rush"}</h1>
-          <p className="raid-lead">{selectedBoss === "unicron" ? "Two players face a 1,400 Health, three-phase Unicron. His oversized card remains visible above a single three-space legion row." : "Two human players deploy on separate 3 × 3 boards beside one another. The visible Quintesson Judge stands above a 2 × 3 troop court whose enemy cards stay concealed."}</p>
-          <div className="raid-boss-picker" aria-label="Choose Boss Rush encounter">
-            <button className={selectedBoss === "quintesson" ? "active" : ""} onClick={() => setSelectedBoss("quintesson")}>Quintesson Judge</button>
-            <button className={selectedBoss === "unicron" ? "active" : ""} onClick={() => setSelectedBoss("unicron")}>Unicron</button>
+          <h1>
+            {selectedBoss === "unicron"
+              ? "Unicron Boss Rush"
+              : "Quintesson Boss Rush"}
+          </h1>
+          <p className="raid-lead">
+            {selectedBoss === "unicron"
+              ? "Two players face a 1,400 Health, three-phase Unicron. His oversized card remains visible above a single three-space legion row."
+              : "Two human players deploy on separate 3 × 3 boards beside one another. The visible Quintesson Judge stands above a 2 × 3 troop court whose enemy cards stay concealed."}
+          </p>
+          <div
+            className="raid-boss-picker"
+            aria-label="Choose Boss Rush encounter"
+          >
+            <button
+              className={selectedBoss === "quintesson" ? "active" : ""}
+              onClick={() => setSelectedBoss("quintesson")}
+            >
+              Quintesson Judge
+            </button>
+            <button
+              className={selectedBoss === "unicron" ? "active" : ""}
+              onClick={() => setSelectedBoss("unicron")}
+            >
+              Unicron
+            </button>
           </div>
           <div className="raid-rules-callout">
             <b>Round order</b>
             <span>Simultaneous placement</span>
             <span>Player 1: 3 attacks</span>
             <span>Player 2: 3 attacks</span>
-            <span>{selectedBoss === "unicron" ? "Three boss phases" : "Boss turn + 2 moves"}</span>
+            <span>
+              {selectedBoss === "unicron"
+                ? "Three boss phases"
+                : "Boss turn + 2 moves"}
+            </span>
           </div>
           <label>
             Render server address
-            <input value={server} onChange={(event) => setServer(event.target.value)} />
+            <input
+              value={server}
+              onChange={(event) => setServer(event.target.value)}
+            />
           </label>
           <label>
             Your name
-            <input value={name} maxLength={20} placeholder="Player name" onChange={(event) => setName(event.target.value)} />
+            <input
+              value={name}
+              maxLength={20}
+              placeholder="Player name"
+              onChange={(event) => setName(event.target.value)}
+            />
           </label>
           <label>
             Boss Rush room code
-            <input value={code} maxLength={12} placeholder="E.G. VERDICT7" onChange={(event) => setCode(event.target.value.toUpperCase())} />
+            <input
+              value={code}
+              maxLength={12}
+              placeholder="E.G. VERDICT7"
+              onChange={(event) => setCode(event.target.value.toUpperCase())}
+            />
           </label>
           <div className="raid-lobby-actions">
             <button className="primary" onClick={join}>
@@ -368,7 +602,10 @@ export default function RaidPage() {
               Main menu
             </Link>
           </div>
-          <p className="raid-message">Both players use the same room code. Your cards remain yours: you cannot move or attack with your ally’s characters.</p>
+          <p className="raid-message">
+            Both players use the same room code. Your cards remain yours: you
+            cannot move or attack with your ally’s characters.
+          </p>
           <p className="raid-message">{message}</p>
         </section>
       </main>
@@ -387,12 +624,20 @@ export default function RaidPage() {
                 <span>{player.ready ? "READY" : "NOT READY"}</span>
               </div>
             ))}
-            {state.players.length < 2 ? <div className="waiting-slot">WAITING FOR ALLY</div> : null}
+            {state.players.length < 2 ? (
+              <div className="waiting-slot">WAITING FOR ALLY</div>
+            ) : null}
           </div>
-          <button className="primary" disabled={Boolean(me?.ready)} onClick={() => socket?.emit("raid-ready")}>
+          <button
+            className="primary"
+            disabled={Boolean(me?.ready)}
+            onClick={() => socket?.emit("raid-ready")}
+          >
             {me?.ready ? "Waiting for ally" : "I am ready"}
           </button>
-          <p className="raid-message">Both players ready up before building decks.</p>
+          <p className="raid-message">
+            Both players ready up before building decks.
+          </p>
           <p className="raid-message">{message}</p>
         </section>
       </main>
@@ -407,56 +652,105 @@ export default function RaidPage() {
             <h1>Choose and order your nine</h1>
           </div>
           <b className={legal ? "legal" : ""}>{deck.length}/9</b>
-          <button className="primary" disabled={!legal || locked} onClick={submit}>
+          <button
+            className="primary"
+            disabled={!legal || locked}
+            onClick={submit}
+          >
             {locked ? "Waiting for ally" : "Lock Raid team"}
           </button>
         </header>
         <div className="raid-counts">
-          <span className={counts.Commander === 2 ? "ok" : ""}>2 Commanders · {counts.Commander}</span>
-          <span className={counts.Scout === 3 ? "ok" : ""}>3 Scouts · {counts.Scout}</span>
-          <span className={counts.Trooper === 2 ? "ok" : ""}>2 Troopers · {counts.Trooper}</span>
-          <span className={counts.Tactician === 2 ? "ok" : ""}>2 Tacticians · {counts.Tactician}</span>
+          <span className={counts.Commander === 2 ? "ok" : ""}>
+            2 Commanders · {counts.Commander}
+          </span>
+          <span className={counts.Scout === 3 ? "ok" : ""}>
+            3 Scouts · {counts.Scout}
+          </span>
+          <span className={counts.Trooper === 2 ? "ok" : ""}>
+            2 Troopers · {counts.Trooper}
+          </span>
+          <span className={counts.Tactician === 2 ? "ok" : ""}>
+            2 Tacticians · {counts.Tactician}
+          </span>
         </div>
         <section className="raid-loadout">
           <h2>Deployment order</h2>
-          <p>The first six become your deployable characters. Cards 7–9 stay as your hidden Backups.</p>
+          <p>
+            The first six become your deployable characters. Cards 7–9 stay as
+            your hidden Backups.
+          </p>
           <div>
             {deck.map((unit, index) => (
-              <article key={unit.id} className={index < 6 ? "deployed" : "backup"} onMouseEnter={() => setInspected(unit)} onMouseLeave={() => setInspected(null)}>
+              <article
+                key={unit.id}
+                className={index < 6 ? "deployed" : "backup"}
+                onMouseEnter={() => setInspected(unit)}
+                onMouseLeave={() => setInspected(null)}
+              >
                 <b>{index + 1}</b>
                 <CardImage src={unit.image} alt="" />
                 <span>
                   {unit.name}
                   <small>{index < 6 ? "DEPLOYED" : "BACKUP"}</small>
                 </span>
-                <button disabled={locked || index === 0} onClick={() => moveDeckCard(index, -1)} aria-label={`Move ${unit.name} earlier`}>
+                <button
+                  disabled={locked || index === 0}
+                  onClick={() => moveDeckCard(index, -1)}
+                  aria-label={`Move ${unit.name} earlier`}
+                >
                   ↑
                 </button>
-                <button disabled={locked || index === deck.length - 1} onClick={() => moveDeckCard(index, 1)} aria-label={`Move ${unit.name} later`}>
+                <button
+                  disabled={locked || index === deck.length - 1}
+                  onClick={() => moveDeckCard(index, 1)}
+                  aria-label={`Move ${unit.name} later`}
+                >
                   ↓
                 </button>
               </article>
             ))}
           </div>
         </section>
-        <section className="raid-pool-controls" aria-label="Boss Rush loadout filters">
+        <section
+          className="raid-pool-controls"
+          aria-label="Boss Rush loadout filters"
+        >
           <div>
             <span>CLASS</span>
-            {["All", "Commander", "Scout", "Trooper", "Tactician"].map((role) => (
-              <button key={role} className={roleFilter === role ? "active" : ""} onClick={() => setRoleFilter(role)}>
-                {role}
-                <small>{role === "All" ? rolePool.length : roleCount(role)}</small>
-              </button>
-            ))}
+            {["All", "Commander", "Scout", "Trooper", "Tactician"].map(
+              (role) => (
+                <button
+                  key={role}
+                  className={roleFilter === role ? "active" : ""}
+                  onClick={() => setRoleFilter(role)}
+                >
+                  {role}
+                  <small>
+                    {role === "All" ? rolePool.length : roleCount(role)}
+                  </small>
+                </button>
+              ),
+            )}
           </div>
           <div>
             <span>FACTION</span>
-            {["All", "Autobot", "Decepticon", "Maximal", "Predacon"].map((faction) => (
-              <button key={faction} className={factionFilter === faction ? "active" : ""} onClick={() => setFactionFilter(faction)}>
-                {faction}
-                <small>{faction === "All" ? factionPool.length : factionCount(faction)}</small>
-              </button>
-            ))}
+            {["All", "Autobot", "Decepticon", "Maximal", "Predacon"].map(
+              (faction) => (
+                <button
+                  key={faction}
+                  className={factionFilter === faction ? "active" : ""}
+                  onClick={() => setFactionFilter(faction)}
+                >
+                  {faction}
+                  <small>
+                    {faction === "All"
+                      ? factionPool.length
+                      : factionCount(faction)}
+                  </small>
+                </button>
+              ),
+            )}
           </div>
           <p>
             {filteredUnits.length} cards shown · {deck.length}/9 selected
@@ -464,13 +758,26 @@ export default function RaidPage() {
         </section>
         <section className="raid-card-pool">
           {filteredUnits.map((unit) => {
-            const selectedIndex = deck.findIndex((entry) => entry.id === unit.id);
+            const selectedIndex = deck.findIndex(
+              (entry) => entry.id === unit.id,
+            );
             return (
-              <button key={unit.id} className={selectedIndex >= 0 ? "chosen" : ""} onClick={() => toggle(unit)} onMouseEnter={() => setInspected(unit)} onMouseLeave={() => setInspected(null)} aria-pressed={selectedIndex >= 0}>
+              <button
+                key={unit.id}
+                className={selectedIndex >= 0 ? "chosen" : ""}
+                onClick={() => toggle(unit)}
+                onMouseEnter={() => setInspected(unit)}
+                onMouseLeave={() => setInspected(null)}
+                aria-pressed={selectedIndex >= 0}
+              >
                 <CardImage src={unit.image} alt={unit.name} />
                 <span>
                   {unit.name}
-                  <small>{selectedIndex >= 0 ? `SELECTED ${selectedIndex + 1}` : "ADD TO LOADOUT"}</small>
+                  <small>
+                    {selectedIndex >= 0
+                      ? `SELECTED ${selectedIndex + 1}`
+                      : "ADD TO LOADOUT"}
+                  </small>
                 </span>
               </button>
             );
@@ -487,30 +794,75 @@ export default function RaidPage() {
         <header className="raid-header">
           <div>
             <p className="eyebrow">ENEMY BRIEFING · {state.code}</p>
-            <h1>Know {state.encounterId === "unicron" ? "the Chaos Bringer" : "the Quintesson court"}</h1>
+            <h1>
+              Know{" "}
+              {state.encounterId === "unicron"
+                ? "the Chaos Bringer"
+                : "the Quintesson court"}
+            </h1>
           </div>
-          <button className="primary" disabled={state.briefingReady} onClick={() => socket?.emit("raid-briefing-ready")}>
+          <button
+            className="primary"
+            disabled={state.briefingReady}
+            onClick={() => socket?.emit("raid-briefing-ready")}
+          >
             {state.briefingReady ? "Waiting for ally" : "Ready to deploy"}
           </button>
         </header>
         <section className="raid-briefing-intro">
-          <p>{state.encounterId === "unicron" ? "Review all three Unicron phases and the full Phase 3 legion. Unicron and every summoned card remain visible throughout the fight." : "Review the full boss and every support card before deployment. Court positions will be concealed once the fight begins."}</p>
-          <strong>{state.encounterName.toUpperCase()} · {state.judge.max} HP · {state.judge.dmg} DMG</strong>
+          <p>
+            {state.encounterId === "unicron"
+              ? "Review all three Unicron phases and the full Phase 3 legion. Unicron and every summoned card remain visible throughout the fight."
+              : "Review the full boss and every support card before deployment. Court positions will be concealed once the fight begins."}
+          </p>
+          <strong>
+            {state.encounterName.toUpperCase()} · {state.judge.max} HP ·{" "}
+            {state.judge.dmg} DMG
+          </strong>
         </section>
-        <section className={`raid-briefing-roster ${state.encounterId === "unicron" ? "unicron-briefing-roster" : ""}`} aria-label={`${state.encounterName} boss and support cards`}>
+        <section
+          className={`raid-briefing-roster ${state.encounterId === "unicron" ? "unicron-briefing-roster" : ""}`}
+          aria-label={`${state.encounterName} boss and support cards`}
+        >
           {state.bossRoster.map((unit, index) => (
-            <article key={`${unit.id}-${index}`} className={state.encounterId === "unicron" && unit.id === "unicron" ? "briefing-boss unicron-phase-card" : index === 0 ? "briefing-boss" : "briefing-support"} onMouseEnter={() => setInspected(unit)} onMouseLeave={() => setInspected(null)}>
+            <article
+              key={`${unit.id}-${index}`}
+              className={
+                state.encounterId === "unicron" && unit.id === "unicron"
+                  ? "briefing-boss unicron-phase-card"
+                  : index === 0
+                    ? "briefing-boss"
+                    : "briefing-support"
+              }
+              onMouseEnter={() => setInspected(unit)}
+              onMouseLeave={() => setInspected(null)}
+            >
               <CardImage src={unit.image} alt={unit.name} />
               <div>
-                <p>{unit.id === "unicron" ? `BOSS · PHASE ${unit.phase}` : index === 0 ? "BOSS" : unit.id === "allicon" ? "POSSIBLE REINFORCEMENT" : state.encounterId === "unicron" ? "PHASE 3 LEGION" : "COURT SUPPORT"}</p>
+                <p>
+                  {unit.id === "unicron"
+                    ? `BOSS · PHASE ${unit.phase}`
+                    : index === 0
+                      ? "BOSS"
+                      : unit.id === "allicon"
+                        ? "POSSIBLE REINFORCEMENT"
+                        : state.encounterId === "unicron"
+                          ? "PHASE 3 LEGION"
+                          : "COURT SUPPORT"}
+                </p>
                 <h2>{unit.name}</h2>
-                <span>{unit.role} · {unit.max} HP · {unit.dmg} DMG</span>
+                <span>
+                  {unit.role} · {unit.max} HP · {unit.dmg} DMG
+                </span>
                 <small>{unit.ability}</small>
               </div>
             </article>
           ))}
         </section>
-        <p className="raid-message">Both players must acknowledge the enemy briefing before simultaneous placement begins.</p>
+        <p className="raid-message">
+          Both players must acknowledge the enemy briefing before simultaneous
+          placement begins.
+        </p>
         <RaidCardInspector unit={inspected} />
       </main>
     );
@@ -521,10 +873,18 @@ export default function RaidPage() {
         <header className="raid-header">
           <div>
             <p className="eyebrow">SIMULTANEOUS DEPLOYMENT · {state.code}</p>
-            <h1>{placing ? "Place your strike team" : "Your deployment is complete"}</h1>
+            <h1>
+              {placing
+                ? "Place your strike team"
+                : "Your deployment is complete"}
+            </h1>
           </div>
           <b>
-            {state.players.reduce((sum, player) => sum + (player.team?.board.filter(Boolean).length || 0), 0)}
+            {state.players.reduce(
+              (sum, player) =>
+                sum + (player.team?.board.filter(Boolean).length || 0),
+              0,
+            )}
             /12 placed
           </b>
         </header>
@@ -535,21 +895,37 @@ export default function RaidPage() {
                 <p>ALLIED STRIKE FORMATION</p>
                 <h2>Your 3 × 3 board</h2>
               </div>
-              <span>{placing ? "PLACE FREELY WHILE YOUR ALLY PLACES" : "WAITING FOR YOUR ALLY TO FINISH"}</span>
+              <span>
+                {placing
+                  ? "PLACE FREELY WHILE YOUR ALLY PLACES"
+                  : "WAITING FOR YOUR ALLY TO FINISH"}
+              </span>
             </div>
-            <p className="raid-placement-privacy">Both players place at the same time on their own private board. Your ally’s formation appears when combat begins.</p>
+            <p className="raid-placement-privacy">
+              Both players place at the same time on their own private board.
+              Your ally’s formation appears when combat begins.
+            </p>
             <div className="raid-player-boards">
               {state.players
                 .filter((player) => player.id === state.youId)
                 .map((player) => {
                   const board = boardFor(player);
-                  const playerNumber = state.players.findIndex((entry) => entry.id === player.id) + 1;
+                  const playerNumber =
+                    state.players.findIndex((entry) => entry.id === player.id) +
+                    1;
                   return (
-                    <section key={player.id} className="raid-player-board your-board">
+                    <section
+                      key={player.id}
+                      className="raid-player-board your-board"
+                    >
                       <header>
                         <div>
                           <strong>PLAYER {playerNumber} · YOU</strong>
-                          <small>{placing ? "YOUR BOARD · CONTROLS UNLOCKED" : "YOUR BOARD · DEPLOYMENT COMPLETE"}</small>
+                          <small>
+                            {placing
+                              ? "YOUR BOARD · CONTROLS UNLOCKED"
+                              : "YOUR BOARD · DEPLOYMENT COMPLETE"}
+                          </small>
                         </div>
                         <span>{board.filter(Boolean).length}/6 deployed</span>
                       </header>
@@ -557,7 +933,15 @@ export default function RaidPage() {
                         {Array.from({ length: 9 }, (_, slot) => {
                           const unit = board[slot];
                           return (
-                            <button key={slot} className={`raid-slot ${unit ? "own-slot" : "vacant"}`} onClick={() => choosePlacement(slot)} onMouseEnter={() => unit && setInspected(unit)} onMouseLeave={() => setInspected(null)} disabled={!unit && !placing} aria-disabled={Boolean(unit)}>
+                            <button
+                              key={slot}
+                              className={`raid-slot ${unit ? "own-slot" : "vacant"}`}
+                              onClick={() => choosePlacement(slot)}
+                              onMouseEnter={() => unit && setInspected(unit)}
+                              onMouseLeave={() => setInspected(null)}
+                              disabled={!unit && !placing}
+                              aria-disabled={Boolean(unit)}
+                            >
                               {unit ? (
                                 <>
                                   <CardImage src={unit.image} alt={unit.name} />
@@ -578,16 +962,36 @@ export default function RaidPage() {
           </section>
           <section className="raid-placement-hand">
             <h2>Your six to place</h2>
-            <p>Select a character, then any empty space on your board. Your teammate can place independently at the same time.</p>
+            <p>
+              Select a character, then any empty space on your board. Your
+              teammate can place independently at the same time.
+            </p>
             <div>
               {me?.team?.pending?.map((unit) => (
-                <button key={unit.id} className={placement === unit.id ? "selected" : ""} disabled={!placing} onClick={() => setPlacement((current) => (current === unit.id ? null : unit.id))} onMouseEnter={() => setInspected(unit)} onMouseLeave={() => setInspected(null)}>
+                <button
+                  key={unit.id}
+                  className={placement === unit.id ? "selected" : ""}
+                  disabled={!placing}
+                  onClick={() =>
+                    setPlacement((current) =>
+                      current === unit.id ? null : unit.id,
+                    )
+                  }
+                  onMouseEnter={() => setInspected(unit)}
+                  onMouseLeave={() => setInspected(null)}
+                >
                   <CardImage src={unit.image} alt={unit.name} />
                   <span>{unit.name}</span>
                 </button>
               ))}
             </div>
-            <p className="raid-message">{placement ? `Selected ${me?.team?.pending?.find((unit) => unit.id === placement)?.name}. Choose an empty space on your board.` : placing ? message : "Your six are placed. Waiting for your teammate to finish."}</p>
+            <p className="raid-message">
+              {placement
+                ? `Selected ${me?.team?.pending?.find((unit) => unit.id === placement)?.name}. Choose an empty space on your board.`
+                : placing
+                  ? message
+                  : "Your six are placed. Waiting for your teammate to finish."}
+            </p>
           </section>
         </div>
         <RaidCardInspector unit={inspected} />
@@ -595,22 +999,45 @@ export default function RaidPage() {
     );
 
   const finished = state.stage === "victory" || state.stage === "defeat";
-  const activeName = state.players.find((player) => player.id === state.activeId)?.name;
-  const battleCardsLocked = state.encounterId === "unicron" && state.bossBoard.some((unit) => unit?.id === "the-fallen");
+  const activeName = state.players.find(
+    (player) => player.id === state.activeId,
+  )?.name;
+  const battleCardsLocked =
+    state.encounterId === "unicron" &&
+    state.bossBoard.some((unit) => unit?.id === "the-fallen");
   const availableAbilities = [
-    ...(me?.team?.board.filter((unit): unit is Unit => Boolean(unit && raidActiveAbilities.has(unit.id))) || []),
+    ...(me?.team?.board.filter((unit): unit is Unit =>
+      Boolean(unit && raidActiveAbilities.has(unit.id)),
+    ) || []),
     ...(me?.team?.backups.filter((unit) => unit.id === "galvatron") || []),
   ];
   return (
     <main className="raid-page raid-combat-page">
       <header className="raid-header">
         <div>
-          <p className="eyebrow">{state.encounterName.toUpperCase()} BOSS RUSH · ROUND {state.round}</p>
-          <h1>{state.stage === "victory" ? "Boss Rush Victory" : state.stage === "defeat" ? "Boss Rush Defeat" : state.stage === "boss" ? "Boss Turn" : state.stage === "reposition" ? "Repositioning" : active ? "Your Turn" : `${activeName || "Your ally"}'s Turn`}</h1>
+          <p className="eyebrow">
+            {state.encounterName.toUpperCase()} BOSS RUSH · ROUND {state.round}
+          </p>
+          <h1>
+            {state.stage === "victory"
+              ? "Boss Rush Victory"
+              : state.stage === "defeat"
+                ? "Boss Rush Defeat"
+                : state.stage === "boss"
+                  ? "Boss Turn"
+                  : state.stage === "reposition"
+                    ? "Repositioning"
+                    : active
+                      ? "Your Turn"
+                      : `${activeName || "Your ally"}'s Turn`}
+          </h1>
         </div>
         <div className="raid-turn-control">
           {active && state.stage === "combat" ? (
-            <button className="primary raid-end" onClick={() => socket?.emit("raid-end-turn")}>
+            <button
+              className="primary raid-end"
+              onClick={() => socket?.emit("raid-end-turn")}
+            >
               End Your Turn
             </button>
           ) : null}
@@ -627,7 +1054,13 @@ export default function RaidPage() {
             </button>
           ) : null}
         </div>
-        <b>{active ? `${state.actions} attacks` : state.stage === "reposition" ? `${state.repositions[state.youId] || 0} move` : "Stand by"}</b>
+        <b>
+          {active
+            ? `${state.actions} attacks`
+            : state.stage === "reposition"
+              ? `${state.repositions[state.youId] || 0} move`
+              : "Stand by"}
+        </b>
         {finished ? (
           <Link className="ghost" href="/">
             Return to menu
@@ -648,18 +1081,33 @@ export default function RaidPage() {
               availableAbilities.map((unit) => {
                 const used = me?.team?.usedAbilities?.includes(unit.id);
                 return (
-                  <button key={unit.id} disabled={!active || used || unit.abilityUses <= 0} onClick={() => activateAbility(unit.id)} onMouseEnter={() => setInspected(unit)} onMouseLeave={() => setInspected(null)}>
+                  <button
+                    key={unit.id}
+                    disabled={!active || used || unit.abilityUses <= 0}
+                    onClick={() => activateAbility(unit.id)}
+                    onMouseEnter={() => setInspected(unit)}
+                    onMouseLeave={() => setInspected(null)}
+                  >
                     <CardImage src={unit.image} alt="" />
                     <span>
                       <b>{unit.name}</b>
                       <small>{unit.ability}</small>
                     </span>
-                    <em>{used || unit.abilityUses <= 0 ? "USED" : abilitySource === unit.id ? "SELECT TARGET" : "ACTIVATE"}</em>
+                    <em>
+                      {used || unit.abilityUses <= 0
+                        ? "USED"
+                        : abilitySource === unit.id
+                          ? "SELECT TARGET"
+                          : "ACTIVATE"}
+                    </em>
                   </button>
                 );
               })
             ) : (
-              <p className="raid-console-empty">Your deployed characters have passive abilities. They resolve automatically when their conditions are met.</p>
+              <p className="raid-console-empty">
+                Your deployed characters have passive abilities. They resolve
+                automatically when their conditions are met.
+              </p>
             )}
           </div>
         </div>
@@ -669,13 +1117,26 @@ export default function RaidPage() {
               <p>SHARED BOSS RUSH DECK</p>
               <h2>Battle Cards</h2>
             </div>
-            <span>{battleCardsLocked ? "DISABLED BY THE FALLEN" : state.battlePlayed ? "CARD PLAYED THIS ROUND" : "ONE CARD PER ROUND"}</span>
+            <span>
+              {battleCardsLocked
+                ? "DISABLED BY THE FALLEN"
+                : state.battlePlayed
+                  ? "CARD PLAYED THIS ROUND"
+                  : "ONE CARD PER ROUND"}
+            </span>
           </div>
           <div className="raid-battle-hand">
             {state.battleHand.map((name, index) => {
-              const card = state.battleCards.find((entry) => entry.name === name);
+              const card = state.battleCards.find(
+                (entry) => entry.name === name,
+              );
               return (
-                <button key={`${name}-${index}`} className={`raid-battle-card rarity-${card?.rarity.toLowerCase() || "common"}`} disabled={!active || state.battlePlayed || battleCardsLocked} onClick={() => playBattleCard(name)}>
+                <button
+                  key={`${name}-${index}`}
+                  className={`raid-battle-card rarity-${card?.rarity.toLowerCase() || "common"}`}
+                  disabled={!active || state.battlePlayed || battleCardsLocked}
+                  onClick={() => playBattleCard(name)}
+                >
                   <span>{card?.rarity || "Boss Rush"}</span>
                   <b>{name}</b>
                   <small>{card?.effect || "Boss Rush tactical effect."}</small>
@@ -693,21 +1154,36 @@ export default function RaidPage() {
               <p>ALLIED STRIKE FORMATION</p>
               <h2>Player boards</h2>
             </div>
-            <span>{moving ? "SELECT A CARD, THEN A SPACE" : active ? "SELECT YOUR CARD, THEN A BOSS" : "YOUR BOARD IS HIGHLIGHTED"}</span>
+            <span>
+              {moving
+                ? "SELECT A CARD, THEN A SPACE"
+                : active
+                  ? "SELECT YOUR CARD, THEN A BOSS"
+                  : "YOUR BOARD IS HIGHLIGHTED"}
+            </span>
           </div>
           <div className="raid-player-boards">
             {displayPlayers.map((player) => {
               const own = player.id === state.youId;
               const board = boardFor(player);
-              const playerNumber = state.players.findIndex((entry) => entry.id === player.id) + 1;
+              const playerNumber =
+                state.players.findIndex((entry) => entry.id === player.id) + 1;
               return (
-                <section key={player.id} className={`raid-player-board ${own ? "your-board" : "ally-board"}`}>
+                <section
+                  key={player.id}
+                  className={`raid-player-board ${own ? "your-board" : "ally-board"}`}
+                >
                   <header>
                     <div>
                       <strong>
-                        PLAYER {playerNumber} · {own ? "YOU" : player.name.toUpperCase()}
+                        PLAYER {playerNumber} ·{" "}
+                        {own ? "YOU" : player.name.toUpperCase()}
                       </strong>
-                      <small>{own ? "YOUR BOARD · CONTROLS UNLOCKED" : "ALLY BOARD · LOCKED TO OWNER"}</small>
+                      <small>
+                        {own
+                          ? "YOUR BOARD · CONTROLS UNLOCKED"
+                          : "ALLY BOARD · LOCKED TO OWNER"}
+                      </small>
                     </div>
                     <span>{board.filter(Boolean).length}/6 deployed</span>
                   </header>
@@ -715,15 +1191,49 @@ export default function RaidPage() {
                     {Array.from({ length: 9 }, (_, slot) => {
                       const unit = board[slot];
                       const selected = own && moveSource === slot;
-                      const disabled = moving ? !own || (backupSource ? !unit : moveSource === null ? !unit : false) : !active || !own || !unit || Boolean(me?.team?.used?.includes(unit.id));
+                      const disabled = moving
+                        ? !own ||
+                          (backupSource
+                            ? !unit
+                            : moveSource === null
+                              ? !unit
+                              : false)
+                        : !active ||
+                          !own ||
+                          !unit ||
+                          Boolean(me?.team?.used?.includes(unit.id));
                       return (
-                        <button key={slot} className={`raid-slot ${unit ? (own ? "own-slot" : "ally-slot") : "vacant"} ${selected ? "move-source" : ""} ${unit && (attacker || abilitySource) ? "targetable" : ""} ${unit ? isAnimated(unit.id) : ""}`} onClick={() => (moving ? (own ? reposition(slot) : undefined) : own && unit ? chooseCombatCard(unit) : undefined)} aria-disabled={disabled} onMouseEnter={() => unit && setInspected(unit)} onMouseLeave={() => setInspected(null)}>
+                        <button
+                          key={slot}
+                          className={`raid-slot ${unit ? (own ? "own-slot" : "ally-slot") : "vacant"} ${selected ? "move-source" : ""} ${unit && (attacker || abilitySource) ? "targetable" : ""} ${unit ? isAnimated(unit.id) : ""}`}
+                          onClick={() =>
+                            moving
+                              ? own
+                                ? reposition(slot)
+                                : undefined
+                              : own && unit
+                                ? chooseCombatCard(unit)
+                                : undefined
+                          }
+                          aria-disabled={disabled}
+                          onMouseEnter={() => unit && setInspected(unit)}
+                          onMouseLeave={() => setInspected(null)}
+                        >
                           {unit ? (
                             <>
                               <CardImage src={unit.image} alt={unit.name} />
                               <b>{unit.name}</b>
-                              <small>{own ? `${unit.hp}/${unit.max} HP · ${unit.dmg} DMG · YOUR CARD` : `${unit.hp}/${unit.max} HP · ${unit.dmg} DMG · ALLY CARD`}</small>
-                              {animation?.targetId === unit.id && animation.damage ? <em className="raid-damage-pop">-{animation.damage}</em> : null}
+                              <small>
+                                {own
+                                  ? `${unit.hp}/${unit.max} HP · ${unit.dmg} DMG · YOUR CARD`
+                                  : `${unit.hp}/${unit.max} HP · ${unit.dmg} DMG · ALLY CARD`}
+                              </small>
+                              {animation?.targetId === unit.id &&
+                              animation.damage ? (
+                                <em className="raid-damage-pop">
+                                  -{animation.damage}
+                                </em>
+                              ) : null}
                             </>
                           ) : (
                             <span>SPACE {slot + 1}</span>
@@ -733,8 +1243,20 @@ export default function RaidPage() {
                     })}
                   </div>
                   <div className="raid-board-backups">
-                    <strong>BACKUPS · {player.team?.backups.length || 0} REMAIN</strong>
-                    {own ? <span>{player.team?.backups.length ? player.team.backups.map((unit) => unit.name).join(" · ") : "None"}</span> : <span>Hidden from opponent</span>}
+                    <strong>
+                      BACKUPS · {player.team?.backups.length || 0} REMAIN
+                    </strong>
+                    {own ? (
+                      <span>
+                        {player.team?.backups.length
+                          ? player.team.backups
+                              .map((unit) => unit.name)
+                              .join(" · ")
+                          : "None"}
+                      </span>
+                    ) : (
+                      <span>Hidden from opponent</span>
+                    )}
                   </div>
                 </section>
               );
@@ -742,16 +1264,36 @@ export default function RaidPage() {
           </div>
         </section>
         {/* Hidden Quintesson troop cards are represented only by these neutral cardbacks. */}
-        <section className={`quintesson-raid-board raid-boss-panel ${state.encounterId === "unicron" ? "unicron-raid-board" : ""}`}>
+        <section
+          className={`quintesson-raid-board raid-boss-panel ${state.encounterId === "unicron" ? "unicron-raid-board" : ""}`}
+        >
           <div className="raid-board-title">
             <div>
-              <p>{state.encounterId === "unicron" ? `CHAOS BRINGER · PHASE ${state.judge.phase}` : "VERDICT CHAMBER"}</p>
-              <h2>{state.encounterId === "unicron" ? "Unicron and his legion" : "Quintesson Court"}</h2>
+              <p>
+                {state.encounterId === "unicron"
+                  ? `CHAOS BRINGER · PHASE ${state.judge.phase}`
+                  : "VERDICT CHAMBER"}
+              </p>
+              <h2>
+                {state.encounterId === "unicron"
+                  ? "Unicron and his legion"
+                  : "Quintesson Court"}
+              </h2>
             </div>
-            <span>{state.encounterId === "unicron" ? "3 LEGION SPACES · ALL CARDS VISIBLE" : "6 COURT SPACES · TARGET ANY SPACE"}</span>
+            <span>
+              {state.encounterId === "unicron"
+                ? "3 LEGION SPACES · ALL CARDS VISIBLE"
+                : "6 COURT SPACES · TARGET ANY SPACE"}
+            </span>
           </div>
           <div className="raid-judge-space">
-            <button className={`raid-judge-card ${isAnimated(state.judge.id)}`} onClick={() => attack(state.judge.id)} aria-disabled={!active || (!attacker && !abilitySource)} onMouseEnter={() => setInspected(state.judge)} onMouseLeave={() => setInspected(null)}>
+            <button
+              className={`raid-judge-card ${isAnimated(state.judge.id)}`}
+              onClick={() => attack(state.judge.id)}
+              aria-disabled={!active || (!attacker && !abilitySource)}
+              onMouseEnter={() => setInspected(state.judge)}
+              onMouseLeave={() => setInspected(null)}
+            >
               <CardImage src={state.judge.image} alt={state.judge.name} />
               <div>
                 <strong>{state.judge.name}</strong>
@@ -760,13 +1302,16 @@ export default function RaidPage() {
                 </span>
                 <small>{state.judge.ability}</small>
               </div>
-              {animation?.targetId === state.judge.id && animation.damage ? <em className="raid-damage-pop">-{animation.damage}</em> : null}
+              {animation?.targetId === state.judge.id && animation.damage ? (
+                <em className="raid-damage-pop">-{animation.damage}</em>
+              ) : null}
             </button>
           </div>
           <div className="raid-boss-board">
             {state.bossBoard.map((unit, slot) => {
               const feedback = state.courtFeedback?.[slot];
-              const revealedUnit = unit?.hidden === false && unit.image ? unit : null;
+              const revealedUnit =
+                unit?.hidden === false && unit.image ? unit : null;
               return (
                 <button
                   key={slot}
@@ -790,21 +1335,37 @@ export default function RaidPage() {
                 >
                   {revealedUnit ? (
                     <>
-                      <CardImage src={revealedUnit.image} alt={revealedUnit.name || "Revealed Quintesson troop"} />
+                      <CardImage
+                        src={revealedUnit.image}
+                        alt={revealedUnit.name || "Revealed Quintesson troop"}
+                      />
                       <strong>{revealedUnit.name}</strong>
                       <span>
-                        {revealedUnit.hp}/{revealedUnit.max} HP · {revealedUnit.dmg} DMG
+                        {revealedUnit.hp}/{revealedUnit.max} HP ·{" "}
+                        {revealedUnit.dmg} DMG
                       </span>
                       <small>{revealedUnit.ability}</small>
                     </>
                   ) : (
                     <span className="raid-court-cardback">
                       <span className="raid-hidden-card-back">?</span>
-                      <b>{state.encounterId === "unicron" ? "LEGION SPACE" : "COURT SPACE"}</b>
+                      <b>
+                        {state.encounterId === "unicron"
+                          ? "LEGION SPACE"
+                          : "COURT SPACE"}
+                      </b>
                     </span>
                   )}
-                  {feedback ? <small className={`raid-court-result ${feedback.toLowerCase()}`}>{feedback}</small> : null}
-                  {animation?.targetSlot === slot && animation.damage ? <em className="raid-damage-pop">-{animation.damage}</em> : null}
+                  {feedback ? (
+                    <small
+                      className={`raid-court-result ${feedback.toLowerCase()}`}
+                    >
+                      {feedback}
+                    </small>
+                  ) : null}
+                  {animation?.targetSlot === slot && animation.damage ? (
+                    <em className="raid-damage-pop">-{animation.damage}</em>
+                  ) : null}
                 </button>
               );
             })}
@@ -815,15 +1376,32 @@ export default function RaidPage() {
         <div className="raid-command-status">
           <div>
             <p className="raid-command-kicker">COMBAT PHASE</p>
-            <h2>{active ? "Your attack turn" : state.stage === "boss" ? `${state.encounterName} turn` : state.stage === "reposition" ? "Repositioning" : "Co-op combat"}</h2>
-            <p>{active ? `${state.actions} attacks remaining. Each player starts with three attacks before the boss acts.` : "Your ally controls their own board. The Judge and court resolve after both players finish."}</p>
+            <h2>
+              {active
+                ? "Your attack turn"
+                : state.stage === "boss"
+                  ? `${state.encounterName} turn`
+                  : state.stage === "reposition"
+                    ? "Repositioning"
+                    : "Co-op combat"}
+            </h2>
+            <p>
+              {active
+                ? `${state.actions} attacks remaining. Each player starts with three attacks before the boss acts.`
+                : "Your ally controls their own board. The Judge and court resolve after both players finish."}
+            </p>
             <p className="raid-ability-help">
-              <strong>Abilities:</strong> activate unique abilities in the console above the board. Targeted abilities then highlight the court; passive abilities resolve automatically.
+              <strong>Abilities:</strong> activate unique abilities in the
+              console above the board. Targeted abilities then highlight the
+              court; passive abilities resolve automatically.
             </p>
           </div>
           <div className="raid-backup-area">
             <h3>Your Backups</h3>
-            <p className="raid-backup-help">During repositioning, choose a Backup, then choose one of your deployed cards to swap it in.</p>
+            <p className="raid-backup-help">
+              During repositioning, choose a Backup, then choose one of your
+              deployed cards to swap it in.
+            </p>
             <div className="raid-backup-cards">
               {me?.team?.backups?.length ? (
                 me.team.backups.map((unit) => (
@@ -836,7 +1414,10 @@ export default function RaidPage() {
                     onMouseEnter={() => setInspected(unit)}
                     onMouseLeave={() => setInspected(null)}
                     onKeyDown={(event) => {
-                      if (moving && (event.key === "Enter" || event.key === " ")) {
+                      if (
+                        moving &&
+                        (event.key === "Enter" || event.key === " ")
+                      ) {
                         event.preventDefault();
                         selectBackup(unit.id);
                       }
@@ -858,7 +1439,11 @@ export default function RaidPage() {
       </section>
       {finished ? (
         <section className="raid-result">
-          <h2>{state.stage === "victory" ? `${state.encounterName} has been defeated.` : `${state.encounterName} has defeated both teams.`}</h2>
+          <h2>
+            {state.stage === "victory"
+              ? `${state.encounterName} has been defeated.`
+              : `${state.encounterName} has defeated both teams.`}
+          </h2>
           <Link className="primary" href="/">
             Return to main menu
           </Link>
@@ -866,23 +1451,46 @@ export default function RaidPage() {
       ) : null}
       <p className="raid-message">{message}</p>
       <aside className="raid-log" aria-live="polite">
-        <h2>{state.encounterId === "unicron" ? "Chaos record" : "Tribunal record"}</h2>
+        <h2>
+          {state.encounterId === "unicron" ? "Chaos record" : "Tribunal record"}
+        </h2>
         {[...state.log].reverse().map((entry, index) => (
           <p key={`${entry}-${index}`}>{entry}</p>
         ))}
       </aside>
       <RaidCardInspector unit={inspected} />
       {deathNotice ? (
-        <div className="raid-death-overlay" role="dialog" aria-modal="true" aria-labelledby="raid-death-title">
+        <div
+          className="raid-death-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="raid-death-title"
+        >
           <section className="raid-death-popup">
-            <button className="raid-death-close" aria-label="Close character defeat notice" onClick={closeDeathNotice}>
+            <button
+              className="raid-death-close"
+              aria-label="Close character defeat notice"
+              onClick={closeDeathNotice}
+            >
               ×
             </button>
             <CardImage src={state.judge.image} alt={state.encounterName} />
             <div>
-              <p className="raid-death-kicker">{state.encounterId === "unicron" ? "CONSUMED BY CHAOS" : "TRIBUNAL DISPOSAL"}</p>
-              <h2 id="raid-death-title">{state.encounterId === "unicron" ? `${deathNotice.name} was claimed by Unicron` : `${deathNotice.name} was thrown to the sharkticons`}</h2>
-              <p>{state.encounterId === "unicron" ? "The Chaos Bringer grows stronger. Choose your next move carefully." : "The Judge records the loss. Choose your next move carefully."}</p>
+              <p className="raid-death-kicker">
+                {state.encounterId === "unicron"
+                  ? "CONSUMED BY CHAOS"
+                  : "TRIBUNAL DISPOSAL"}
+              </p>
+              <h2 id="raid-death-title">
+                {state.encounterId === "unicron"
+                  ? `${deathNotice.name} was claimed by Unicron`
+                  : `${deathNotice.name} was thrown to the sharkticons`}
+              </h2>
+              <p>
+                {state.encounterId === "unicron"
+                  ? "The Chaos Bringer grows stronger. Choose your next move carefully."
+                  : "The Judge records the loss. Choose your next move carefully."}
+              </p>
             </div>
           </section>
         </div>

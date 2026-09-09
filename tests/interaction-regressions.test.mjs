@@ -88,10 +88,23 @@ test("the latest character expansion adds its flight theme and border", () => {
 });
 
 test("the Unicron Boss Rush adds its singularity theme and planetary frame", () => {
-  assert.match(page, /\["chaos-bringer-singularity", "Chaos-Bringer Singularity"\]/);
+  assert.match(
+    page,
+    /\["chaos-bringer-singularity", "Chaos-Bringer Singularity"\]/,
+  );
   assert.match(css, /html\[data-theme="chaos-bringer-singularity"\]/);
   assert.match(page, /\["planet-maw-frame", "Planet Maw Frame"\]/);
   assert.match(css, /data-card-border="planet-maw-frame"/);
+});
+
+test("the nine-card expansion adds its foundry theme and carapace frame", () => {
+  assert.match(page, /\["decepticon-war-foundry", "Decepticon War Foundry"\]/);
+  assert.match(css, /html\[data-theme="decepticon-war-foundry"\]/);
+  assert.match(
+    page,
+    /\["insecticon-carapace-frame", "Insecticon Carapace Frame"\]/,
+  );
+  assert.match(css, /data-card-border="insecticon-carapace-frame"/);
 });
 
 test("combat history is unlimited while its badge caps at 99+", () => {
